@@ -35,6 +35,8 @@ class Settings(BaseSettings):
     secret_key: str = "change-me"
     session_cookie_name: str = "carlisle_session"
     session_lifetime_hours: int = 8
+    # Set to false when running on plain HTTP (no TLS termination)
+    cookie_secure: bool = False
 
     # ── CORS ──────────────────────────────────────────────────────────────
     cors_origins: str = "http://localhost:3000"

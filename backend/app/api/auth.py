@@ -50,7 +50,7 @@ async def login(
         max_age=settings.session_lifetime_hours * 3600,
         httponly=True,
         samesite="lax",
-        secure=settings.environment != "development",
+        secure=settings.cookie_secure,
         path="/",
     )
     return LoginResponse(user=UserResponse.model_validate(user))
@@ -69,7 +69,7 @@ async def logout(
         key=settings.session_cookie_name,
         path="/",
         samesite="lax",
-        secure=settings.environment != "development",
+        secure=settings.cookie_secure,
     )
 
 
