@@ -84,9 +84,7 @@ def calc_proposed_rate(
     if ct == "fixed rate":
         return round(change_input, 4)
     if ct == "per admin pp":
-        # Per Admin PP: set to the designated PP rate, but never reduce an existing rate.
-        # If the employee's current rate already exceeds the PP rate, keep the current rate.
-        return round(max(current_rate, change_input), 4)
+        return round(change_input, 4)
     if ct == "no change":
         return round(current_rate, 4)
     # Unknown type — return None so caller can decide

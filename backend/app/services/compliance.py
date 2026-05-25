@@ -7,7 +7,7 @@ All 6 checks from the prototype, rebuilt properly:
   3. Level ceiling       — proposed rate ≥ NEXT level's floor? (needs reclassification)
   4. Junior rate         — employee under 21 at effective date? SS stream % applies
   5. Rate change         — is rate decreasing? (warn)
-  6. Pay progression     — valid FY25 → FY26 pay point advancement?
+  6. Pay progression     — valid FY26 → proposed_award pay point advancement?
 """
 from __future__ import annotations
 
@@ -222,8 +222,8 @@ def _normalize(lvl: str) -> str:
 # ─────────────────────────────────────────────────────────────────────────────
 def check_employee(
     *,
-    fy25_award: str | None,
     fy26_award: str | None,
+    proposed_award: str | None,
     proposed_rate: float | None,
     current_rate: float | None,
     pp_level: str | None,
@@ -236,8 +236,8 @@ def check_employee(
 
     Parameters
     ----------
-    fy25_award      Last year's award classification
-    fy26_award      This year's award classification (may be same or promoted)
+    fy26_award      This year's award classification (the employee's current level entering this review)
+    proposed_award  The next level accepted for this employee in this review (fy26_award → proposed_award)
     proposed_rate   The rate we plan to pay from 1 July
     current_rate    Current rate (used for rate-change direction check)
     pp_level        Carlisle internal P&P band label
@@ -248,7 +248,7 @@ def check_employee(
     pr = proposed_rate or 0.0
     cr = current_rate or 0.0
     fy26_n = _normalize(fy26_award or "")
-    fy25_n = _normalize(fy25_award or "")
+    pa_n = _normalize(proposed_award or "")
 
     # ── Populate P&P band bounds (used by API / frontend for reference) ───────
     if pp_level and pp_level in PP_BANDS:
@@ -453,59 +453,61 @@ def check_employee(
         ))
         result.overall = _worst(result.overall, "warn")
 
-    # ── Check 6: Pay-point progression ───────────────────────────────────────
-    if fy25_n:
-        fy25_canonical = next(
-            (k for k in AWARD_RATES if _normalize(k) == fy25_n), fy25_n
+    # ── Check 6: Pay-point progression (FY26 → proposed next level) ─────────
+    # Validates that the next level accepted in this review is a sensible step
+    # forward from the employee's current FY26 classification.
+    # fy25_award is irrelevant here — that transition already happened.
+    if pa_n:
+        pa_canonical = next(
+            (k for k in AWARD_RATES if _normalize(k) == pa_n), None
         )
-        fy25_grp = fy25_canonical.rsplit(" PP", 1)[0] if " PP" in fy25_canonical else fy25_canonical
         fy26_grp = (fy26_canonical or fy26_n).rsplit(" PP", 1)[0] if " PP" in (fy26_canonical or fy26_n) else (fy26_canonical or fy26_n)
+        pa_grp = (pa_canonical or pa_n).rsplit(" PP", 1)[0] if " PP" in (pa_canonical or pa_n) else (pa_canonical or pa_n)
 
         if not fy26_n:
             result.checks.append(CheckResult(
                 "warn", "Pay progression",
-                "FY25 award recorded but FY26 not set",
-                "Set the FY26 Award Level to enable progression check",
+                "FY26 award level not set — cannot validate proposed next level",
+                "Set the FY26 Award Level first",
             ))
             result.overall = _worst(result.overall, "warn")
-        elif fy25_grp != fy26_grp:
-            # Different level group — level change (e.g. L1 → L2)
+        elif fy26_grp != pa_grp:
+            # Different level group — intentional reclassification (e.g. L1 → L2)
             result.checks.append(CheckResult(
                 "ok", "Pay progression",
-                f"Level change: {fy25_canonical} → {fy26_canonical or fy26_n} ✓",
+                f"Level change: {fy26_canonical or fy26_n} → {pa_canonical or proposed_award} ✓",
             ))
-        elif fy25_grp in LEVEL_PROGRESSION:
-            pp_list = LEVEL_PROGRESSION[fy25_grp]
+        elif fy26_grp in LEVEL_PROGRESSION:
+            pp_list = LEVEL_PROGRESSION[fy26_grp]
             if len(pp_list) == 1:
-                # Single-rate level (SS L1–L7)
                 result.checks.append(CheckResult(
                     "ok", "Pay progression",
-                    f"{fy26_canonical or fy26_n} — single-rate level, no pay points ✓",
+                    f"{pa_canonical or proposed_award} — single-rate level, no pay points ✓",
                 ))
             else:
                 try:
-                    i25 = pp_list.index(fy25_canonical)
                     i26 = pp_list.index(fy26_canonical or fy26_n)
-                    if i26 > i25:
-                        steps = i26 - i25
+                    ipa = pp_list.index(pa_canonical or pa_n)
+                    if ipa > i26:
+                        steps = ipa - i26
                         result.checks.append(CheckResult(
                             "ok", "Pay progression",
                             f"Advanced {steps} pay point{'s' if steps > 1 else ''}: "
-                            f"{fy25_canonical} → {fy26_canonical} ✓",
+                            f"{fy26_canonical or fy26_n} → {pa_canonical or proposed_award} ✓",
                         ))
-                    elif i26 == i25:
-                        if i25 == len(pp_list) - 1:
+                    elif ipa == i26:
+                        if i26 == len(pp_list) - 1:
                             result.checks.append(CheckResult(
                                 "ok", "Pay progression",
-                                f"At top pay point of {fy25_grp} — "
+                                f"At top pay point of {fy26_grp} — "
                                 f"reclassify to next level for further progression ✓",
                             ))
                         else:
-                            next_pp = pp_list[i25 + 1]
+                            next_pp = pp_list[i26 + 1]
                             next_pp_rate = AWARD_RATES.get(next_pp, 0)
                             result.checks.append(CheckResult(
                                 "warn", "Pay progression",
-                                f"No advancement: still on {fy26_canonical}",
+                                f"No advancement: proposed next level same as FY26 ({pa_canonical or proposed_award})",
                                 f"Advance to {next_pp} (${next_pp_rate:.2f}) "
                                 f"if 12+ months satisfactory service at this pay point",
                             ))
@@ -513,29 +515,37 @@ def check_employee(
                     else:
                         result.checks.append(CheckResult(
                             "warn", "Pay progression",
-                            f"Pay point decreased: {fy25_canonical} → {fy26_canonical}",
+                            f"Pay point decrease proposed: {fy26_canonical or fy26_n} → {pa_canonical or proposed_award}",
                             "Confirm this pay point reduction is correct and has written approval",
                         ))
                         result.overall = _worst(result.overall, "warn")
                 except ValueError:
                     result.checks.append(CheckResult(
                         "warn", "Pay progression",
-                        f"Could not locate {fy25_canonical} or {fy26_canonical} "
-                        f"in the pay point sequence for {fy25_grp}",
-                        "Verify FY25 and FY26 award level classifications are correct",
+                        f"Could not locate {fy26_canonical or fy26_n} or {pa_canonical or proposed_award} "
+                        f"in the pay point sequence for {fy26_grp}",
+                        "Verify FY26 and proposed award level classifications are correct",
                     ))
                     result.overall = _worst(result.overall, "warn")
         else:
             result.checks.append(CheckResult(
-                "ok", "Pay progression", f"{fy25_canonical} → {fy26_canonical or fy26_n}",
+                "ok", "Pay progression",
+                f"{fy26_canonical or fy26_n} → {pa_canonical or proposed_award}",
             ))
-    else:
+    elif result.next_level:
+        # System has detected a progression is due but manager hasn't accepted it yet
         result.checks.append(CheckResult(
             "warn", "Pay progression",
-            "No FY25 Award Level recorded — progression cannot be verified",
-            "Add a FY25 Award Level column to the wage model Excel to enable this check",
+            f"Level progression to {result.next_level} suggested but not yet accepted",
+            f"Click Accept to confirm the move to {result.next_level}, or adjust the proposed rate",
         ))
         result.overall = _worst(result.overall, "warn")
+    else:
+        # No progression due — nothing to validate
+        result.checks.append(CheckResult(
+            "ok", "Pay progression",
+            "No level progression due — check not applicable",
+        ))
 
     # ── Apply suppressions ────────────────────────────────────────────────────
     # Only "warn" checks can be suppressed — hard "fail" checks (Award floor,

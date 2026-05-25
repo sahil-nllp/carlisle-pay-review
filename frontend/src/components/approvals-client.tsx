@@ -782,7 +782,7 @@ function CheckCard({
   const [apiError, setApiError]     = useState<string | null>(null);
 
   const isSuppressed  = check.status === "suppressed";
-  const canSuppress   = check.status === "warn" && !locked;
+  const canSuppress   = check.status === "warn" && !locked && check.label !== "Pay progression";
   const canUnsuppress = isSuppressed && !locked;
 
   const statusStyles = {

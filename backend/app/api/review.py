@@ -158,7 +158,7 @@ def _compliance(
     suppression_infos: list[SuppressionInfo] | None = None,
 ) -> EmployeeCompliance:
     result = cs.check_employee(
-        fy25_award=emp.fy25_award,
+        proposed_award=emp.proposed_award,
         fy26_award=emp.fy26_award,
         proposed_rate=float(emp.proposed_rate) if emp.proposed_rate is not None else None,
         current_rate=float(emp.current_rate) if emp.current_rate is not None else None,
@@ -245,7 +245,7 @@ async def list_sites(
         s["payroll_proposed"] += float(emp.proposed_rate or 0) * hours * 52
 
         comp = cs.check_employee(
-            fy25_award=emp.fy25_award,
+            proposed_award=emp.proposed_award,
             fy26_award=emp.fy26_award,
             proposed_rate=float(emp.proposed_rate) if emp.proposed_rate is not None else None,
             current_rate=float(emp.current_rate) if emp.current_rate is not None else None,
@@ -644,7 +644,7 @@ async def list_approvals(
         s["payroll_current"] += float(emp.current_rate or 0) * hours * 52
         s["payroll_proposed"] += float(emp.proposed_rate or 0) * hours * 52
         comp = cs.check_employee(
-            fy25_award=emp.fy25_award,
+            proposed_award=emp.proposed_award,
             fy26_award=emp.fy26_award,
             proposed_rate=float(emp.proposed_rate) if emp.proposed_rate is not None else None,
             current_rate=float(emp.current_rate) if emp.current_rate is not None else None,
@@ -729,7 +729,7 @@ async def submit_site(
         1
         for e in site_emps
         if not cs.check_employee(
-            fy25_award=e.fy25_award,
+            proposed_award=e.proposed_award,
             fy26_award=e.fy26_award,
             proposed_rate=float(e.proposed_rate) if e.proposed_rate is not None else None,
             current_rate=float(e.current_rate) if e.current_rate is not None else None,
@@ -945,7 +945,7 @@ async def regenerate_site_files(
 # ─────────────────────────────────────────────────────────────────────────────
 
 # Hard-fail checks that are legal obligations — cannot be suppressed
-_UNSUPPRESSIBLE_CHECKS = {"Award floor", "Junior rate"}
+_UNSUPPRESSIBLE_CHECKS = {"Award floor", "Junior rate", "Pay progression"}
 
 
 @router.post(
@@ -975,7 +975,7 @@ async def suppress_check(
 
     # Verify the check actually exists and is a warn for this employee
     comp = cs.check_employee(
-        fy25_award=emp.fy25_award,
+        proposed_award=emp.proposed_award,
         fy26_award=emp.fy26_award,
         proposed_rate=float(emp.proposed_rate) if emp.proposed_rate is not None else None,
         current_rate=float(emp.current_rate) if emp.current_rate is not None else None,
@@ -1122,7 +1122,7 @@ async def get_draft_letter(
     # Compliance must be clean (including suppressed warns counting as ok)
     labels_map, _ = await _load_suppressions_for_employees(db, [emp_id])
     comp = cs.check_employee(
-        fy25_award=emp.fy25_award,
+        proposed_award=emp.proposed_award,
         fy26_award=emp.fy26_award,
         proposed_rate=float(emp.proposed_rate),
         current_rate=float(emp.current_rate) if emp.current_rate is not None else None,
@@ -1196,7 +1196,7 @@ async def get_draft_letters_zip(
             if not emp.proposed_rate:
                 continue
             comp = cs.check_employee(
-                fy25_award=emp.fy25_award,
+                proposed_award=emp.proposed_award,
                 fy26_award=emp.fy26_award,
                 proposed_rate=float(emp.proposed_rate),
                 current_rate=float(emp.current_rate) if emp.current_rate is not None else None,

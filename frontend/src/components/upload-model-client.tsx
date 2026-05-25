@@ -93,7 +93,7 @@ export function UploadModelClient() {
     );
   }
 
-  if (step === "compare" && staged) {
+  if ((step === "compare" || step === "applying") && staged) {
     return (
       <CompareView
         staged={staged}
@@ -101,6 +101,7 @@ export function UploadModelClient() {
         onMetaChange={setMeta}
         onApply={onApply}
         onCancel={onCancel}
+        isApplying={step === "applying"}
       />
     );
   }
@@ -184,12 +185,14 @@ function CompareView({
   onMetaChange,
   onApply,
   onCancel,
+  isApplying,
 }: {
   staged: UploadStaged;
   meta: CycleMetadata;
   onMetaChange: (m: CycleMetadata) => void;
   onApply: (mode: ApplyMode) => void;
   onCancel: () => void;
+  isApplying: boolean;
 }) {
   const hasCurrent = staged.current_cycle !== null;
   const s = staged.summary;
@@ -276,18 +279,32 @@ function CompareView({
             : "Ready to commit"}
         </h3>
 
+        {isApplying && (
+          <div className="mt-4 flex items-center gap-3 rounded-md border border-blue-200 bg-blue-50 px-4 py-3">
+            <svg className="h-4 w-4 animate-spin text-blue-600" viewBox="0 0 24 24" fill="none">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+            </svg>
+            <span className="text-sm font-medium text-blue-800">
+              Importing employees — this may take a moment…
+            </span>
+          </div>
+        )}
+
         <div className="mt-4 flex flex-wrap gap-3">
           {hasCurrent ? (
             <>
               <button
                 onClick={() => onApply("archive")}
-                className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800"
+                disabled={isApplying}
+                className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Archive current & load new
               </button>
               <button
                 onClick={() => onApply("merge")}
-                className="rounded-md bg-emerald-700 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-800"
+                disabled={isApplying}
+                className="rounded-md bg-emerald-700 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-800 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Merge into existing cycle
               </button>
@@ -295,7 +312,8 @@ function CompareView({
           ) : (
             <button
               onClick={() => onApply("fresh")}
-              className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800"
+              disabled={isApplying}
+              className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Create new cycle with this file
             </button>
@@ -303,7 +321,8 @@ function CompareView({
 
           <button
             onClick={onCancel}
-            className="rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
+            disabled={isApplying}
+            className="rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Cancel
           </button>

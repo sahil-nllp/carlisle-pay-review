@@ -1097,7 +1097,13 @@ function ReviewRow({
           value={row.change_type || NONE}
           onValueChange={(v) => {
             const val = v === NONE ? "" : v;
-            const newInput = val.toLowerCase() === "cpi increase" ? String(cpiRate) : row.change_input;
+            const vl = val.toLowerCase();
+            const newInput =
+              vl === "cpi increase"
+                ? String(cpiRate)
+                : vl === "fixed rate" || vl === "per admin pp"
+                  ? String(emp.current_rate ?? "")
+                  : row.change_input;
             onChange("change_type", val);
             onChange("change_input", newInput);
             onSave({ change_type: val, change_input: newInput });
@@ -1398,7 +1404,7 @@ function CheckCard({
   const [apiError, setApiError] = useState<string | null>(null);
 
   const isSuppressed = check.status === "suppressed";
-  const canSuppress = check.status === "warn" && !locked;
+  const canSuppress = check.status === "warn" && !locked && check.label !== "Pay progression";
   const canUnsuppress = isSuppressed && !locked;
 
   const statusStyles = {
