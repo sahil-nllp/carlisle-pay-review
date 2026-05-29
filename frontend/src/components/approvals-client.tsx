@@ -743,7 +743,9 @@ function ApprovalEmpRow({
               <div style={{ fontSize: 10, color: "#065f46", marginTop: 2 }}>↑ from {emp.current_award ?? "—"}</div>
             </div>
           ) : (
-            <span style={{ fontSize: 12, color: "#94a3b8" }}>—</span>
+            <span style={{ fontSize: "0.8125rem", fontWeight: 600, color: "#334155" }}>
+              {emp.current_award ?? <span style={{ color: "#94a3b8" }}>—</span>}
+            </span>
           )
         )}
       </td>

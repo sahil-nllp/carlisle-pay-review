@@ -6,7 +6,6 @@ import React, { useCallback, useMemo, useState, useTransition } from "react";
 import { ApiError } from "@/lib/api";
 import {
   bulkAssignLetters,
-  bulkSuggest,
   downloadDraftLetter,
   downloadDraftLettersZip,
   getSiteEmployees,
@@ -120,7 +119,6 @@ export function SiteReviewClient({
   const [expandedId, setExpandedId] = useState<number | null>(null);
   // Track the latest save ID per employee — used to discard stale in-flight responses
   const saveSeqRef = React.useRef<Record<number, number>>({});
-  const [isSuggesting, startSuggesting] = useTransition();
   const [isAssigningLetters, startAssigningLetters] = useTransition();
   const [isSubmitting, startSubmitting] = useTransition();
   const [submitResult, setSubmitResult] = useState<{
@@ -372,27 +370,6 @@ export function SiteReviewClient({
     });
   }
 
-  // ── Auto-suggest rates ───────────────────────────────────────────────────
-  function handleSuggest() {
-    startSuggesting(async () => {
-      try {
-        const res = await bulkSuggest(cycleId, site);
-        const data = await getSiteEmployees(cycleId, site);
-        setEmployees(data);
-        setRows(Object.fromEntries(data.map((e) => [e.id, initRow(e, cpiRate)])));
-        router.refresh();
-        alert(
-          `Auto-suggest complete: ${res.updated} rates set, ${res.skipped} skipped.`,
-        );
-      } catch (err) {
-        alert(
-          "Auto-suggest failed: " +
-            (err instanceof Error ? err.message : String(err)),
-        );
-      }
-    });
-  }
-
   // ── Submit for approval ──────────────────────────────────────────────────
   function handleSubmit() {
     startSubmitting(async () => {
@@ -549,16 +526,6 @@ export function SiteReviewClient({
       {/* ── Action bar ────────────────────────────────────────────────────── */}
       {!locked && (
         <div className="flex flex-wrap items-center gap-3">
-          <button
-            onClick={handleSuggest}
-            disabled={isSuggesting}
-            className="rounded-lg px-4 py-2 text-sm font-semibold disabled:opacity-50 transition-colors"
-            style={{ background: "var(--neutral-900)", color: "white" }}
-          >
-            {isSuggesting
-              ? "Suggesting…"
-              : `Auto-suggest rates (CPI ${cpiRate}%)`}
-          </button>
           <div
             title={
               !letterReadiness.ready
