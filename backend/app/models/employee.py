@@ -48,42 +48,49 @@ class Employee(Base, TimestampMixin):
         nullable=False,
     )
 
-    # Identity (from UKG)
+    # Identity (from Employee_Details.xlsx)
     emp_num: Mapped[str] = mapped_column(String(50), nullable=False)
     first_name: Mapped[str] = mapped_column(String(120), nullable=False)
     last_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    preferred_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
     email: Mapped[str | None] = mapped_column(String(255), nullable=True)
     dob: Mapped[date | None] = mapped_column(Date, nullable=True)
-    # DOB used for junior rate (under 21) checks at FY end date
     age: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
-    # Organisation
+    # Employment dates (new — from Employee_Details)
+    service_start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    hire_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+
+    # Organisation (from Employee_Details)
     site: Mapped[str] = mapped_column(String(120), nullable=False, index=True)
     department: Mapped[str | None] = mapped_column(String(120), nullable=True)
     category: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    # "Job Classification" from Employee_Details — generic role label
+    # e.g. "Sonographer", "Chief Radiographer", "Radiographer/MLO"
+    # Used as context for picking the pp_level (Convention) during review.
+    job_classification: Mapped[str | None] = mapped_column(String(160), nullable=True)
+
+    # Rate & hours
+    rate_type: Mapped[str | None] = mapped_column(String(20), nullable=True)  # "Hourly" / "Salary"
+    hours_per_pay_period: Mapped[float | None] = mapped_column(Numeric(8, 2), nullable=True)
     hours_per_week: Mapped[float | None] = mapped_column(Numeric(6, 2), nullable=True)
 
-    # Current state (FY25)
-    fy25_award: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    # Current state (entering this review cycle)
+    current_award: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    # Award Agreement from Employee_Details (e.g. "HPSS HP L3 PP5")
     current_rate: Mapped[float | None] = mapped_column(Numeric(10, 4), nullable=True)
+    # "Amount" from Employee_Details
 
-    # Proposed state (FY26)
-    fy26_award: Mapped[str | None] = mapped_column(String(60), nullable=True)
-    proposed_award: Mapped[str | None] = mapped_column(String(60), nullable=True)  # accepted next level
-    pp_level: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    # Proposed state (this review)
+    proposed_award: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    # accepted next level — set by reviewer when accepting a level-change suggestion
+    pp_level: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    # Convention key linking to PPBand.convention — assigned during review
     change_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
     change_input: Mapped[float | None] = mapped_column(Numeric(10, 4), nullable=True)
     proposed_rate: Mapped[float | None] = mapped_column(Numeric(10, 4), nullable=True)
     letter_type: Mapped[str | None] = mapped_column(String(8), nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
-
-    # Historical compliance snapshot (FY25 → FY26, read from Excel, display-only)
-    # These mirror the 5 compliance columns in the source wage model.
-    hist_award_level_changed: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
-    hist_rate_changed:        Mapped[bool | None] = mapped_column(Boolean, nullable=True)
-    hist_above_award_rate:    Mapped[bool | None] = mapped_column(Boolean, nullable=True)
-    hist_above_pp_rate:       Mapped[bool | None] = mapped_column(Boolean, nullable=True)
-    hist_above_pp_max:        Mapped[bool | None] = mapped_column(Boolean, nullable=True)
 
     # Status flags
     is_departed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)

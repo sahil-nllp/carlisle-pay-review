@@ -68,15 +68,18 @@ class EmployeeWithCompliance(BaseModel):
     emp_num: str
     first_name: str
     last_name: str
+    preferred_name: str | None = None
     email: str | None
     age: int | None
     site: str
     department: str | None
     category: str | None
+    job_classification: str | None = None
+    rate_type: str | None = None
+    hours_per_pay_period: float | None = None
     hours_per_week: float | None
-    fy25_award: str | None
+    current_award: str | None
     current_rate: float | None
-    fy26_award: str | None
     proposed_award: str | None    # accepted next-level suggestion
     pp_level: str | None
     change_type: str | None
@@ -85,13 +88,6 @@ class EmployeeWithCompliance(BaseModel):
     letter_type: str | None
     notes: str | None
     is_departed: bool
-
-    # Historical compliance snapshot (FY25→FY26, read-only, sourced from Excel)
-    hist_award_level_changed: bool | None = None
-    hist_rate_changed:        bool | None = None
-    hist_above_award_rate:    bool | None = None
-    hist_above_pp_rate:       bool | None = None
-    hist_above_pp_max:        bool | None = None
 
     compliance: EmployeeCompliance = Field(default_factory=EmployeeCompliance)
 

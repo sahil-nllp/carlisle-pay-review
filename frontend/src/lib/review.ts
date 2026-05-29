@@ -52,15 +52,18 @@ export interface EmployeeWithCompliance {
   emp_num: string;
   first_name: string;
   last_name: string;
+  preferred_name: string | null;
   email: string | null;
   age: number | null;
   site: string;
   department: string | null;
   category: string | null;
+  job_classification: string | null;
+  rate_type: string | null;
+  hours_per_pay_period: number | null;
   hours_per_week: number | null;
-  fy25_award: string | null;
+  current_award: string | null;
   current_rate: number | null;
-  fy26_award: string | null;
   proposed_award: string | null;  // accepted next-level suggestion
   pp_level: string | null;
   change_type: string | null;
@@ -69,13 +72,6 @@ export interface EmployeeWithCompliance {
   letter_type: string | null;
   notes: string | null;
   is_departed: boolean;
-
-  // Historical compliance snapshot (FY25→FY26, read-only, from Excel)
-  hist_award_level_changed: boolean | null;
-  hist_rate_changed: boolean | null;
-  hist_above_award_rate: boolean | null;
-  hist_above_pp_rate: boolean | null;
-  hist_above_pp_max: boolean | null;
 
   compliance: EmployeeCompliance;
 }
@@ -90,6 +86,12 @@ export interface EmployeePatch {
   pp_level?: string | null;
   letter_type?: string | null;
   notes?: string | null;
+}
+
+export interface AwardRateSummary {
+  award_level: string;
+  hourly_rate: number | null;
+  is_off_award: boolean;
 }
 
 export interface BulkSuggestResponse {
@@ -181,6 +183,10 @@ export async function unsuppressCheck(
     `/api/v1/employees/${empId}/suppress-check/${encodeURIComponent(checkLabel)}`,
     { method: "DELETE" },
   );
+}
+
+export async function getAwardRates(cycleId: number): Promise<AwardRateSummary[]> {
+  return api<AwardRateSummary[]>(`/api/v1/cycles/${cycleId}/award-rates`);
 }
 
 // ── Draft letter downloads ────────────────────────────────────────────────────

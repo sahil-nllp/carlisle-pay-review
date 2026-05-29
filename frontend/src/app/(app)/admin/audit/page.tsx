@@ -3,9 +3,9 @@ import { getAuditServer } from "@/lib/admin.server";
 const ACTION_BADGE: Record<string, { bg: string; color: string }> = {
   login:                     { bg: "var(--neutral-100)",  color: "var(--neutral-600)"  },
   logout:                    { bg: "var(--neutral-100)",  color: "var(--neutral-600)"  },
-  upload_wage_model_staged:  { bg: "var(--blue-100)",     color: "var(--blue-700)"     },
-  upload_wage_model_applied: { bg: "var(--blue-100)",     color: "var(--blue-700)"     },
-  upload_wage_model_cancelled:{ bg: "var(--neutral-100)", color: "var(--neutral-600)"  },
+  upload_files_staged:       { bg: "var(--blue-100)",     color: "var(--blue-700)"     },
+  upload_files_applied:      { bg: "var(--blue-100)",     color: "var(--blue-700)"     },
+  upload_files_cancelled:    { bg: "var(--neutral-100)",  color: "var(--neutral-600)"  },
   bulk_suggest_rates:        { bg: "var(--violet-100)",   color: "var(--violet-700)"   },
   site_submitted:            { bg: "var(--amber-100)",    color: "var(--amber-700)"    },
   site_approved:             { bg: "var(--green-100)",    color: "var(--green-700)"    },

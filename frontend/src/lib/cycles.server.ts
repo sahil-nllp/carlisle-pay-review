@@ -15,15 +15,16 @@ export interface EmployeeRow {
   emp_num: string;
   first_name: string;
   last_name: string;
+  preferred_name: string | null;
   email: string | null;
   age: number | null;
   site: string;
   department: string | null;
   category: string | null;
+  job_classification: string | null;
   hours_per_week: number | null;
-  fy25_award: string | null;
+  current_award: string | null;
   current_rate: number | null;
-  fy26_award: string | null;
   pp_level: string | null;
   change_type: string | null;
   proposed_rate: number | null;

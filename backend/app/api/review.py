@@ -154,12 +154,14 @@ async def _load_suppressions_for_employees(
 
 def _compliance(
     emp: Employee,
+    context: cs.ComplianceContext,
     suppressed_labels: set[str] | None = None,
     suppression_infos: list[SuppressionInfo] | None = None,
 ) -> EmployeeCompliance:
     result = cs.check_employee(
+        context=context,
+        current_award=emp.current_award,
         proposed_award=emp.proposed_award,
-        fy26_award=emp.fy26_award,
         proposed_rate=float(emp.proposed_rate) if emp.proposed_rate is not None else None,
         current_rate=float(emp.current_rate) if emp.current_rate is not None else None,
         pp_level=emp.pp_level,
@@ -187,11 +189,12 @@ def _compliance(
 
 def _emp_with_compliance(
     emp: Employee,
+    context: cs.ComplianceContext,
     suppressed_labels: set[str] | None = None,
     suppression_infos: list[SuppressionInfo] | None = None,
 ) -> EmployeeWithCompliance:
     data = EmployeeWithCompliance.model_validate(emp)
-    data.compliance = _compliance(emp, suppressed_labels, suppression_infos)
+    data.compliance = _compliance(emp, context, suppressed_labels, suppression_infos)
     return data
 
 
@@ -206,6 +209,7 @@ async def list_sites(
 ) -> list[SiteSummary]:
     """Return one summary row per site for the given cycle."""
     await _get_cycle_or_404(db, cycle_id)
+    ctx = await cs.load_context(db, cycle_id)
     employees = await cycle_service.get_cycle_employees(db, cycle_id)
 
     # Regional managers see only their own site
@@ -245,8 +249,9 @@ async def list_sites(
         s["payroll_proposed"] += float(emp.proposed_rate or 0) * hours * 52
 
         comp = cs.check_employee(
+            context=ctx,
+            current_award=emp.current_award,
             proposed_award=emp.proposed_award,
-            fy26_award=emp.fy26_award,
             proposed_rate=float(emp.proposed_rate) if emp.proposed_rate is not None else None,
             current_rate=float(emp.current_rate) if emp.current_rate is not None else None,
             pp_level=emp.pp_level,
@@ -301,6 +306,7 @@ async def site_employees(
 ) -> list[EmployeeWithCompliance]:
     site = unquote(site)
     await _get_cycle_or_404(db, cycle_id)
+    ctx = await cs.load_context(db, cycle_id)
 
     # Regional managers can only access their own site
     if (
@@ -320,6 +326,7 @@ async def site_employees(
     return [
         _emp_with_compliance(
             e,
+            ctx,
             suppressed_labels=labels_map.get(e.id),
             suppression_infos=infos_map.get(e.id),
         )
@@ -397,28 +404,30 @@ async def patch_employee(
         emp.pp_level = body.pp_level or None
         changed_fields["pp_level"] = emp.pp_level
 
-    # ── letter_type / notes ───────────────────────────────────────────────────
-    if body.letter_type is not None:
-        emp.letter_type = body.letter_type or None
-        changed_fields["letter_type"] = emp.letter_type
-
+    # ── notes ────────────────────────────────────────────────────────────────
     if body.notes is not None:
         emp.notes = body.notes or None
         changed_fields["notes"] = emp.notes
 
-    # Auto-infer letter type whenever rate OR proposed_award changed
-    if "letter_type" not in changed_fields and (
-        "proposed_rate" in changed_fields or "proposed_award" in changed_fields
-    ):
-        inferred = cs.infer_letter_type(
-            fy26_award=emp.fy26_award,
+    # ── letter_type ───────────────────────────────────────────────────────────
+    # If the client explicitly sent a letter_type value (approval-page override),
+    # honour it.  Otherwise auto-infer from the current state (site-review page
+    # never sends letter_type so it always falls through to the infer branch).
+    if "letter_type" in body.model_fields_set:
+        manual = (body.letter_type or "").upper().strip() or None
+        if emp.letter_type != manual:
+            emp.letter_type = manual
+            changed_fields["letter_type"] = manual
+    else:
+        inferred_letter = cs.infer_letter_type(
+            current_award=emp.current_award,
             proposed_award=emp.proposed_award,
             proposed_rate=float(emp.proposed_rate) if emp.proposed_rate is not None else None,
             current_rate=float(emp.current_rate) if emp.current_rate is not None else None,
         )
-        if inferred:
-            emp.letter_type = inferred
-            changed_fields["letter_type"] = inferred
+        if emp.letter_type != inferred_letter:
+            emp.letter_type = inferred_letter
+            changed_fields["letter_type"] = inferred_letter
 
     if changed_fields:
         db.add(
@@ -435,8 +444,10 @@ async def patch_employee(
 
     # Load suppressions so the response reflects any acknowledged warnings
     labels_map, infos_map = await _load_suppressions_for_employees(db, [emp.id])
+    ctx = await cs.load_context(db, emp.cycle_id)
     return _emp_with_compliance(
         emp,
+        ctx,
         suppressed_labels=labels_map.get(emp.id),
         suppression_infos=infos_map.get(emp.id),
     )
@@ -494,7 +505,7 @@ async def bulk_suggest(
             emp.change_input = cpi_rate
         # Infer letter type
         inferred = cs.infer_letter_type(
-            fy26_award=emp.fy26_award,
+            current_award=emp.current_award,
             proposed_award=emp.proposed_award,
             proposed_rate=suggested,
             current_rate=float(emp.current_rate) if emp.current_rate is not None else None,
@@ -571,7 +582,7 @@ async def bulk_assign_letters(
             skipped += 1
             continue
         inferred = cs.infer_letter_type(
-            fy26_award=emp.fy26_award,
+            current_award=emp.current_award,
             proposed_award=emp.proposed_award,
             proposed_rate=float(emp.proposed_rate),
             current_rate=float(emp.current_rate) if emp.current_rate is not None else None,
@@ -612,6 +623,7 @@ async def list_approvals(
 ) -> list[ApprovalDetail]:
     """Return all submitted approvals for a cycle with site aggregates."""
     await _get_cycle_or_404(db, cycle_id)
+    ctx = await cs.load_context(db, cycle_id)
 
     # Fetch all approvals that have been submitted (exclude not_submitted)
     stmt = select(Approval).where(
@@ -644,8 +656,9 @@ async def list_approvals(
         s["payroll_current"] += float(emp.current_rate or 0) * hours * 52
         s["payroll_proposed"] += float(emp.proposed_rate or 0) * hours * 52
         comp = cs.check_employee(
+            context=ctx,
+            current_award=emp.current_award,
             proposed_award=emp.proposed_award,
-            fy26_award=emp.fy26_award,
             proposed_rate=float(emp.proposed_rate) if emp.proposed_rate is not None else None,
             current_rate=float(emp.current_rate) if emp.current_rate is not None else None,
             pp_level=emp.pp_level,
@@ -718,6 +731,7 @@ async def submit_site(
 ) -> SubmitSiteResponse:
     site = unquote(site)
     await _get_cycle_or_404(db, cycle_id)
+    ctx = await cs.load_context(db, cycle_id)
 
     # Count hard compliance issues
     employees = await cycle_service.get_cycle_employees(db, cycle_id)
@@ -729,8 +743,9 @@ async def submit_site(
         1
         for e in site_emps
         if not cs.check_employee(
+            context=ctx,
+            current_award=e.current_award,
             proposed_award=e.proposed_award,
-            fy26_award=e.fy26_award,
             proposed_rate=float(e.proposed_rate) if e.proposed_rate is not None else None,
             current_rate=float(e.current_rate) if e.current_rate is not None else None,
             pp_level=e.pp_level,
@@ -974,9 +989,11 @@ async def suppress_check(
         )
 
     # Verify the check actually exists and is a warn for this employee
+    ctx = await cs.load_context(db, emp.cycle_id)
     comp = cs.check_employee(
+        context=ctx,
+        current_award=emp.current_award,
         proposed_award=emp.proposed_award,
-        fy26_award=emp.fy26_award,
         proposed_rate=float(emp.proposed_rate) if emp.proposed_rate is not None else None,
         current_rate=float(emp.current_rate) if emp.current_rate is not None else None,
         pp_level=emp.pp_level,
@@ -1029,7 +1046,7 @@ async def suppress_check(
     await db.refresh(emp)
 
     labels_map, infos_map = await _load_suppressions_for_employees(db, [emp_id])
-    return _emp_with_compliance(emp, labels_map.get(emp_id), infos_map.get(emp_id))
+    return _emp_with_compliance(emp, ctx, labels_map.get(emp_id), infos_map.get(emp_id))
 
 
 @router.delete(
@@ -1078,7 +1095,8 @@ async def unsuppress_check(
     await db.refresh(emp)
 
     labels_map, infos_map = await _load_suppressions_for_employees(db, [emp_id])
-    return _emp_with_compliance(emp, labels_map.get(emp_id), infos_map.get(emp_id))
+    ctx = await cs.load_context(db, emp.cycle_id)
+    return _emp_with_compliance(emp, ctx, labels_map.get(emp_id), infos_map.get(emp_id))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1121,9 +1139,11 @@ async def get_draft_letter(
 
     # Compliance must be clean (including suppressed warns counting as ok)
     labels_map, _ = await _load_suppressions_for_employees(db, [emp_id])
+    ctx = await cs.load_context(db, emp.cycle_id)
     comp = cs.check_employee(
+        context=ctx,
+        current_award=emp.current_award,
         proposed_award=emp.proposed_award,
-        fy26_award=emp.fy26_award,
         proposed_rate=float(emp.proposed_rate),
         current_rate=float(emp.current_rate) if emp.current_rate is not None else None,
         pp_level=emp.pp_level,
@@ -1166,6 +1186,7 @@ async def get_draft_letters_zip(
 
     site = unquote(site)
     cycle = await _get_cycle_or_404(db, cycle_id)
+    ctx = await cs.load_context(db, cycle_id)
 
     # Regional managers can only access their own site
     if (
@@ -1196,8 +1217,9 @@ async def get_draft_letters_zip(
             if not emp.proposed_rate:
                 continue
             comp = cs.check_employee(
+                context=ctx,
+                current_award=emp.current_award,
                 proposed_award=emp.proposed_award,
-                fy26_award=emp.fy26_award,
                 proposed_rate=float(emp.proposed_rate),
                 current_rate=float(emp.current_rate) if emp.current_rate is not None else None,
                 pp_level=emp.pp_level,

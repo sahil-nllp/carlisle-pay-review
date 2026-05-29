@@ -14,11 +14,14 @@ import {
   submitSite,
   suppressCheck,
   unsuppressCheck,
+  type AwardRateSummary,
   type CheckResult,
   type EmployeePatch,
   type EmployeeWithCompliance,
   type SuppressionInfo,
 } from "@/lib/review";
+import { filterPPOptionsForAward, type PPBand } from "@/lib/pp-bands";
+import { PPLevelPicker } from "@/components/pp-level-picker";
 import {
   Select,
   SelectContent,
@@ -38,8 +41,6 @@ const CHANGE_TYPES = [
   "No Change",
 ];
 
-const LETTER_TYPES = ["A", "B", "C"];
-
 // Whether the change type takes a % input, $ input, or no input
 function inputKind(ct: string): "percent" | "dollars" | "none" {
   const t = ct.toLowerCase();
@@ -58,24 +59,26 @@ type SaveState = "idle" | "saving" | "saved" | "error";
 
 interface RowState {
   change_type: string;
-  change_input: string;       // raw string for the input field
-  proposed_award: string | null;  // accepted next-level; null = not accepted
+  change_input: string;           // raw string for the input field
+  proposed_award: string | null;  // reviewer-selected award; null = unchanged
+  pp_level: string | null;        // reviewer-selected PP convention
   letter_type: string;
   notes: string;
-  proposed_rate: number | null;  // display-only; updated from server response
+  proposed_rate: number | null;   // display-only; updated from server response
   saveState: SaveState;
   error: string | null;
   compliance: EmployeeWithCompliance["compliance"];
 }
 
-function initRow(e: EmployeeWithCompliance, cpiRate: number): RowState {
+function initRow(e: EmployeeWithCompliance, _cpiRate?: number): RowState {
   return {
-    change_type: e.change_type ?? "CPI Increase",
+    change_type: e.change_type ?? "No Change",
     change_input:
       e.change_input != null
         ? String(e.change_input)
-        : String(cpiRate),
+        : "0",
     proposed_award: e.proposed_award ?? null,
+    pp_level: e.pp_level ?? null,
     letter_type: e.letter_type ?? "",
     notes: e.notes ?? "",
     proposed_rate: e.proposed_rate ?? null,
@@ -92,12 +95,16 @@ export function SiteReviewClient({
   initialEmployees,
   cpiRate,
   approvalStatus = "not_submitted",
+  awardRates = [],
+  ppBands = [],
 }: {
   cycleId: number;
   site: string;
   initialEmployees: EmployeeWithCompliance[];
   cpiRate: number;
   approvalStatus?: string;
+  awardRates?: AwardRateSummary[];
+  ppBands?: PPBand[];
 }) {
   const locked = approvalStatus === "pending" || approvalStatus === "approved";
   const router = useRouter();
@@ -111,6 +118,8 @@ export function SiteReviewClient({
       ),
   );
   const [expandedId, setExpandedId] = useState<number | null>(null);
+  // Track the latest save ID per employee — used to discard stale in-flight responses
+  const saveSeqRef = React.useRef<Record<number, number>>({});
   const [isSuggesting, startSuggesting] = useTransition();
   const [isAssigningLetters, startAssigningLetters] = useTransition();
   const [isSubmitting, startSubmitting] = useTransition();
@@ -119,7 +128,6 @@ export function SiteReviewClient({
     message: string;
   } | null>(null);
   const [showDeparted, setShowDeparted] = useState(false);
-  const [showHistory, setShowHistory] = useState(false);
   const [isDraftZipping, setIsDraftZipping] = useState(false);
 
   // Called when suppress / unsuppress returns a fresh employee record
@@ -132,12 +140,13 @@ export function SiteReviewClient({
         ...prev,
         [updated.id]: {
           ...prev[updated.id],
-          change_type: updated.change_type ?? "CPI Increase",
+          change_type: updated.change_type ?? "No Change",
           change_input:
             updated.change_input != null
               ? String(updated.change_input)
-              : String(cpiRate),
+              : "0",
           proposed_award: updated.proposed_award ?? null,
+          pp_level: updated.pp_level ?? null,
           letter_type: updated.letter_type ?? "",
           notes: updated.notes ?? "",
           proposed_rate: updated.proposed_rate ?? null,
@@ -192,7 +201,6 @@ export function SiteReviewClient({
   const submitReadiness = useMemo(() => {
     let unresolvedCompliance = 0; // fail or warn (not suppressed)
     let missingLetters       = 0; // no letter_type assigned
-    let pendingLevelChanges  = 0; // next_level suggested but not accepted
     let missingRates         = 0; // no proposed_rate
 
     for (const emp of active) {
@@ -202,8 +210,6 @@ export function SiteReviewClient({
         unresolvedCompliance++;
       if (!row.letter_type)
         missingLetters++;
-      if (row.compliance.next_level && !row.proposed_award)
-        pendingLevelChanges++;
       if (!row.proposed_rate)
         missingRates++;
     }
@@ -213,8 +219,6 @@ export function SiteReviewClient({
       blockers.push(`${missingRates} employee${missingRates !== 1 ? "s" : ""} missing a proposed rate`);
     if (unresolvedCompliance > 0)
       blockers.push(`${unresolvedCompliance} unresolved compliance issue${unresolvedCompliance !== 1 ? "s" : ""}`);
-    if (pendingLevelChanges > 0)
-      blockers.push(`${pendingLevelChanges} suggested level change${pendingLevelChanges !== 1 ? "s" : ""} not yet accepted`);
     if (missingLetters > 0)
       blockers.push(`${missingLetters} employee${missingLetters !== 1 ? "s" : ""} without a letter`);
 
@@ -229,16 +233,14 @@ export function SiteReviewClient({
   const letterReadiness = useMemo(() => {
     let missingRates      = 0;
     let unresolvedIssues  = 0;
-    let pendingLevelChanges = 0;
     for (const emp of active) {
       const row = rows[emp.id];
       if (!row) continue;
       if (!row.proposed_rate) missingRates++;
       if (row.compliance.overall !== "ok") unresolvedIssues++;
-      if (row.compliance.next_level && !row.proposed_award) pendingLevelChanges++;
     }
-    const ready = missingRates === 0 && unresolvedIssues === 0 && pendingLevelChanges === 0;
-    return { missingRates, unresolvedIssues, pendingLevelChanges, ready };
+    const ready = missingRates === 0 && unresolvedIssues === 0;
+    return { missingRates, unresolvedIssues, ready };
   }, [active, rows]);
 
   // ── Summary stats ────────────────────────────────────────────────────────
@@ -260,10 +262,18 @@ export function SiteReviewClient({
   const saveRow = useCallback(
     async (
       emp: EmployeeWithCompliance,
-      patch: Partial<Pick<RowState, "change_type" | "change_input" | "letter_type" | "notes">>,
+      patch: Partial<Pick<RowState, "change_type" | "change_input" | "proposed_award" | "letter_type" | "notes">> & {
+        pp_level?: string | null;
+      },
     ) => {
       const row = rows[emp.id];
       if (!row) return;
+
+      // Stamp this save with a sequence number — any older in-flight response
+      // that arrives after a newer one is silently discarded.
+      const seq = (saveSeqRef.current[emp.id] ?? 0) + 1;
+      saveSeqRef.current[emp.id] = seq;
+
       setRows((prev) => ({
         ...prev,
         [emp.id]: { ...prev[emp.id], saveState: "saving", error: null },
@@ -282,24 +292,32 @@ export function SiteReviewClient({
             ? { proposed_award: (patch.proposed_award as string | null | undefined) ?? null }
             : {};
 
+        // Empty string = clear (backend converts "" → null); null = don't touch
+        const ppLevelPatch: Pick<EmployeePatch, "pp_level"> | Record<never, never> =
+          "pp_level" in patch ? { pp_level: patch.pp_level ?? "" } : {};
+
         const updated = await patchEmployee(emp.id, {
           change_type: changeType || null,
           change_input: changeInput,
           ...proposedAwardPatch,
-          letter_type: (patch.letter_type ?? row.letter_type) || null,
+          ...ppLevelPatch,
           notes: (patch.notes ?? row.notes) || null,
         });
+
+        // Discard stale response — a newer save has already landed
+        if (saveSeqRef.current[emp.id] !== seq) return;
 
         setRows((prev) => ({
           ...prev,
           [emp.id]: {
             ...prev[emp.id],
-            change_type: updated.change_type ?? "CPI Increase",
+            change_type: updated.change_type ?? "No Change",
             change_input:
               updated.change_input != null
                 ? String(updated.change_input)
-                : String(cpiRate),
+                : "0",
             proposed_award: updated.proposed_award ?? null,
+            pp_level: updated.pp_level ?? null,
             letter_type: updated.letter_type ?? "",
             notes: updated.notes ?? "",
             proposed_rate: updated.proposed_rate ?? null,
@@ -325,6 +343,7 @@ export function SiteReviewClient({
           }));
         }, 2000);
       } catch (err) {
+        if (saveSeqRef.current[emp.id] !== seq) return; // stale error — ignore
         const msg = err instanceof ApiError ? err.message : "Save failed";
         setRows((prev) => ({
           ...prev,
@@ -546,7 +565,6 @@ export function SiteReviewClient({
                 ? [
                     letterReadiness.missingRates > 0 && `${letterReadiness.missingRates} missing proposed rate`,
                     letterReadiness.unresolvedIssues > 0 && `${letterReadiness.unresolvedIssues} unresolved compliance issue${letterReadiness.unresolvedIssues !== 1 ? "s" : ""}`,
-                    letterReadiness.pendingLevelChanges > 0 && `${letterReadiness.pendingLevelChanges} level change${letterReadiness.pendingLevelChanges !== 1 ? "s" : ""} not yet accepted`,
                   ].filter(Boolean).join(" · ")
                 : undefined
             }
@@ -570,7 +588,7 @@ export function SiteReviewClient({
                 className="absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center rounded-full text-[9px] font-bold"
                 style={{ background: "var(--amber-400)", color: "white" }}
               >
-                {letterReadiness.missingRates + letterReadiness.unresolvedIssues + letterReadiness.pendingLevelChanges}
+                {letterReadiness.missingRates + letterReadiness.unresolvedIssues}
               </span>
             )}
           </div>
@@ -682,7 +700,7 @@ export function SiteReviewClient({
             {/* ── Toolbar row — lives inside thead so it spans the full table width ── */}
             <tr>
               <th
-                colSpan={11 + (showHistory ? 5 : 0)}
+                colSpan={13}
                 style={{
                   position: "sticky",
                   top: 0,
@@ -692,7 +710,7 @@ export function SiteReviewClient({
                   padding: 0,
                 }}
               >
-                <div className="flex items-center justify-between px-4 py-2.5">
+                <div className="flex items-center justify-between px-4" style={{ height: 44 }}>
                   <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--neutral-400)" }}>
                     {active.length} active employees
                   </span>
@@ -718,43 +736,25 @@ export function SiteReviewClient({
                           : `⬇ ${tableSummary.draftReady} draft${tableSummary.draftReady !== 1 ? "s" : ""}`}
                       </button>
                     )}
-                    <button
-                      onClick={() => setShowHistory((v) => !v)}
-                      className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors"
-                      style={{
-                        background: showHistory ? "var(--neutral-900)" : "var(--neutral-100)",
-                        color: showHistory ? "white" : "var(--neutral-600)",
-                      }}
-                    >
-                      <span>{showHistory ? "▲" : "▼"}</span>
-                      Last year (FY25→FY26)
-                    </button>
                   </div>
                 </div>
               </th>
             </tr>
             {/* ── Column headers ── */}
             <tr>
-              {/* Base columns */}
               <Th align="left"  >Emp #</Th>
               <Th align="left"  >Name</Th>
               <Th align="center">Age</Th>
               <Th align="center">Status</Th>
-              <Th align="left"  >FY26 Award Level</Th>
+              <Th align="left"  >Current Award</Th>
+              <Th align="left"  >Proposed Award</Th>
+              <Th align="left"  >PP Level</Th>
               <Th align="right" >Current Rate</Th>
               <Th align="left"  >Change Type</Th>
               <Th align="right" >Input</Th>
               <Th align="right" >Proposed Rate</Th>
               <Th align="center">Letter</Th>
               <Th align="left"  >Notes</Th>
-              {/* History columns */}
-              {showHistory && <>
-                <Th align="center" history>Level Changed?</Th>
-                <Th align="center" history>Rate Changed?</Th>
-                <Th align="center" history>Above Award Min?</Th>
-                <Th align="center" history>Above Band Min?</Th>
-                <Th align="center" history>Below Band Max?</Th>
-              </>}
             </tr>
           </thead>
           <tbody>
@@ -770,7 +770,8 @@ export function SiteReviewClient({
                     cpiRate={cpiRate}
                     locked={locked}
                     isExpanded={expandedId === emp.id}
-                    showHistory={showHistory}
+                    awardRates={awardRates}
+                    ppBands={ppBands}
                     onToggleExpand={() =>
                       setExpandedId((prev) =>
                         prev === emp.id ? null : emp.id,
@@ -787,7 +788,7 @@ export function SiteReviewClient({
                   {expandedId === emp.id && (
                     <tr key={`${emp.id}-panel`}>
                       <td
-                        colSpan={11 + (showHistory ? 5 : 0)}
+                        colSpan={13}
                         className="px-5 py-4"
                         style={{
                           borderBottom: "1px solid var(--neutral-100)",
@@ -924,7 +925,7 @@ function Th({
 //  Row component
 // ─────────────────────────────────────────────────────────────────────────────
 type RowPatch = Partial<
-  Pick<RowState, "change_type" | "change_input" | "proposed_award" | "letter_type" | "notes">
+  Pick<RowState, "change_type" | "change_input" | "proposed_award" | "pp_level" | "notes">
 >;
 
 function ReviewRow({
@@ -933,7 +934,8 @@ function ReviewRow({
   cpiRate,
   locked,
   isExpanded,
-  showHistory,
+  awardRates,
+  ppBands,
   onToggleExpand,
   onChange,
   onSave,
@@ -943,11 +945,21 @@ function ReviewRow({
   cpiRate: number;
   locked: boolean;
   isExpanded: boolean;
-  showHistory: boolean;
+  awardRates: AwardRateSummary[];
+  ppBands: PPBand[];
   onToggleExpand: () => void;
   onChange: (field: keyof RowState, value: string) => void;
   onSave: (patch: RowPatch) => void;
 }) {
+  // Step 1: reviewer explicitly selected a different award
+  const hasAwardChange = Boolean(
+    row.proposed_award && row.proposed_award !== emp.current_award
+  );
+  // Step 2: PP band has been selected (unlocks rate controls)
+  const hasPPSelected = Boolean(row.pp_level);
+  // Effective award driving the PP options (proposed if changed, otherwise current)
+  const effectiveAward = row.proposed_award || emp.current_award;
+
   const overall = row.compliance.overall;
   const rateHasFail = row.compliance.checks.some(
     (c) => c.label === "Award floor" && c.status === "fail",
@@ -1022,56 +1034,170 @@ function ReviewRow({
         )}
       </td>
 
-      {/* ── FY26 Award Level + level change decision ───────────────────── */}
-      <td className={tdBase} style={{ minWidth: 240 }}>
-        {/* Current level label */}
+      {/* ── Current Award (read-only) ─────────────────────────────────────── */}
+      <td className={tdBase} style={{ minWidth: 180 }}>
         <div style={{ fontSize: "0.8125rem", fontWeight: 700, color: "#0f172a", letterSpacing: "-0.01em" }}>
-          {emp.fy26_award ?? <span style={{ color: "#cbd5e1" }}>—</span>}
+          {emp.current_award ?? <span style={{ color: "#cbd5e1" }}>—</span>}
         </div>
         {/* PP level + band range as subtle meta */}
-        <div style={{ fontSize: 10, color: "#64748b", marginTop: 1 }}>
-          {[emp.pp_level, row.compliance.band_min != null && row.compliance.band_max != null
-            ? `band ${formatRate(row.compliance.band_min)}–${formatRate(row.compliance.band_max)}`
-            : null].filter(Boolean).join(" · ")}
-        </div>
+        {(emp.pp_level || (row.compliance.band_min != null && row.compliance.band_max != null)) && (
+          <div style={{ fontSize: 10, color: "#94a3b8", marginTop: 2 }}>
+            {[
+              emp.pp_level,
+              row.compliance.band_min != null && row.compliance.band_max != null
+                ? `${formatRate(row.compliance.band_min)}–${formatRate(row.compliance.band_max)}`
+                : null,
+            ].filter(Boolean).join(" · ")}
+          </div>
+        )}
+      </td>
 
-        {/* ── Accepted level change ── */}
-        {row.proposed_award ? (
-          <div style={{
-            marginTop: 8, display: "flex", alignItems: "center", gap: 6,
-            background: "#eff6ff", border: "1px solid #bfdbfe",
-            borderRadius: 8, padding: "5px 8px",
-          }}>
-            <span style={{ fontSize: 10, color: "#64748b" }}>→</span>
-            <span style={{ fontSize: 12, fontWeight: 700, color: "#1d4ed8", flex: 1 }}>
+      {/* ── Proposed Award (dropdown) ─────────────────────────────────────── */}
+      <td className={tdBase} style={{ minWidth: 200 }}>
+        {awardRates.length > 0 ? (
+          <Select
+            value={row.proposed_award || emp.current_award || NONE}
+            onValueChange={(v) => {
+              const selected = v === NONE ? "" : v;
+              const isSameLevelAsCurrent = !selected || selected === emp.current_award;
+              if (isSameLevelAsCurrent) {
+                // Same level → revert to No Change, clear proposed_award + pp_level
+                onChange("proposed_award", "");
+                onChange("pp_level", "");
+                onChange("change_type", "No Change");
+                onChange("change_input", "0");
+                onSave({ proposed_award: "", pp_level: "", change_type: "No Change", change_input: "0" });
+              } else {
+                // Different award → clear pp_level and rate controls (letter auto-inferred by backend)
+                onChange("proposed_award", selected);
+                onChange("pp_level", "");
+                onChange("change_type", "No Change");
+                onChange("change_input", "0");
+                onSave({ proposed_award: selected, pp_level: "", change_type: "No Change", change_input: "0" });
+              }
+            }}
+            disabled={locked}
+          >
+            <SelectTrigger
+              className="h-7 w-full text-xs px-2"
+              style={
+                hasAwardChange
+                  ? { borderColor: "#6ee7b7", background: "#f0fdf4", color: "#065f46", fontWeight: 700 }
+                  : { borderColor: "var(--neutral-200)", color: "var(--neutral-500)" }
+              }
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {awardRates.map((r) => (
+                <SelectItem key={r.award_level} value={r.award_level} className="text-xs">
+                  <span>{r.award_level}</span>
+                  {r.hourly_rate != null && (
+                    <span style={{ color: "#94a3b8", marginLeft: 8 }}>{formatRate(r.hourly_rate)}</span>
+                  )}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        ) : locked ? (
+          /* Locked + no award rates → show proposed_award as text */
+          row.proposed_award ? (
+            <span style={{ fontSize: "0.8125rem", fontWeight: 700, color: "#065f46" }}>
               {row.proposed_award}
             </span>
+          ) : (
+            <span style={{ fontSize: 12, color: "#94a3b8" }}>—</span>
+          )
+        ) : (
+          <span style={{ fontSize: 11, color: "#94a3b8" }}>No reference data</span>
+        )}
+        {/* Award change arrow hint */}
+        {hasAwardChange && (
+          <div style={{ fontSize: 10, color: "#065f46", marginTop: 3 }}>
+            ↑ from {emp.current_award ?? "—"}
           </div>
-        ) : row.compliance.next_level && !locked ? (
-          /* ── Unaccepted suggestion ── */
-          <div style={{
-            marginTop: 8, display: "flex", alignItems: "center", gap: 6,
-            background: "#f8fafc", border: "1.5px dashed #cbd5e1",
-            borderRadius: 8, padding: "5px 8px",
-          }}>
-            <span style={{ fontSize: 10, color: "#64748b" }}>Suggest →</span>
-            <span style={{ fontSize: 12, fontWeight: 600, color: "#475569", flex: 1 }}>
-              {row.compliance.next_level}
-            </span>
+        )}
+
+        {/* Level upgrade suggestion chip */}
+        {!hasAwardChange && !locked && row.compliance.next_level && (() => {
+          const suggestedRate = awardRates.find(
+            (r) => r.award_level === row.compliance.next_level
+          )?.hourly_rate;
+          return (
             <button
-              onClick={() => onSave({ proposed_award: row.compliance.next_level! })}
+              onClick={() => {
+                const suggested = row.compliance.next_level!;
+                onChange("proposed_award", suggested);
+                onChange("pp_level", "");
+                onChange("change_type", "No Change");
+                onChange("change_input", "0");
+                onSave({ proposed_award: suggested, pp_level: "", change_type: "No Change", change_input: "0" });
+              }}
+              className="mt-2 flex items-start gap-1.5 rounded-md px-2 py-1.5 text-[10px] font-semibold transition-colors hover:opacity-80"
               style={{
-                background: "#0f172a", color: "white",
-                borderRadius: 5, padding: "2px 10px",
-                fontSize: 11, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap",
+                background: "#eff6ff",
+                border: "1px solid #bfdbfe",
+                color: "#1d4ed8",
               }}
             >
-              Accept
+              <span className="mt-px">↑</span>
+              <div style={{ textAlign: "left" }}>
+                <div>Suggest: {row.compliance.next_level}</div>
+                {suggestedRate != null && (
+                  <div style={{ color: "#93c5fd", fontWeight: 400 }}>{formatRate(suggestedRate)}</div>
+                )}
+              </div>
             </button>
-          </div>
-        ) : (
-          <div style={{ marginTop: 6, fontSize: 11, color: "#64748b" }}>No level change</div>
-        )}
+          );
+        })()}
+
+      </td>
+
+      {/* ── PP Level (separate column) ───────────────────────────────────── */}
+      <td className={tdBase} style={{ minWidth: 200, opacity: effectiveAward ? 1 : 0.4 }}>
+        <PPLevelPicker
+          ppBands={ppBands}
+          effectiveAward={effectiveAward}
+          value={row.pp_level}
+          locked={locked || !effectiveAward}
+          onSelect={(conv) => {
+            onChange("pp_level", conv ?? "");
+            onSave({ pp_level: conv });
+          }}
+        />
+        {/* PP band ceiling suggestion — find a band for the same award that fits the proposed rate */}
+        {!locked && row.proposed_rate != null && (() => {
+          const hasCeilingWarn = row.compliance.checks.some(
+            (c) => c.label === "PP band ceiling" && c.status === "warn"
+          );
+          if (!hasCeilingWarn) return null;
+          const filtered = filterPPOptionsForAward(ppBands, effectiveAward);
+          const better = filtered.find(
+            (b) => b.convention !== row.pp_level &&
+              (b.band_max === null || b.band_max >= row.proposed_rate!)
+          );
+          if (!better) return null;
+          return (
+            <button
+              onClick={() => {
+                onChange("pp_level", better.convention);
+                onSave({ pp_level: better.convention });
+              }}
+              className="mt-2 flex items-start gap-1.5 rounded-md px-2 py-1.5 text-[10px] font-semibold transition-colors hover:opacity-80"
+              style={{ background: "#fffbeb", border: "1px solid #fde68a", color: "#b45309" }}
+            >
+              <span className="mt-px">↑</span>
+              <div style={{ textAlign: "left" }}>
+                <div>Switch to: {better.carlisle_label ?? better.convention}</div>
+                <div style={{ color: "#fbbf24", fontWeight: 400 }}>
+                  {better.band_max != null
+                    ? `${formatRate(better.band_min!)}–${formatRate(better.band_max)}`
+                    : `${formatRate(better.band_min!)}+`}
+                </div>
+              </div>
+            </button>
+          );
+        })()}
       </td>
 
       {/* ── Current rate ────────────────────────────────────────────────── */}
@@ -1079,7 +1205,7 @@ function ReviewRow({
         <div style={{ fontFamily: "var(--font-mono)", fontWeight: 600, fontSize: "0.875rem", color: "#334155" }}>
           {emp.current_rate != null ? formatRate(emp.current_rate) : "—"}
         </div>
-        {annualCurrent && (
+        {!!annualCurrent && (
           <div style={{ fontSize: 10, color: "#64748b", marginTop: 1 }}>
             {formatAnnual(annualCurrent)}/yr
           </div>
@@ -1092,23 +1218,28 @@ function ReviewRow({
       </td>
 
       {/* ── Change type ─────────────────────────────────────────────────── */}
-      <td className={`${tdBase}`} style={{ minWidth: 145 }}>
+      <td className={`${tdBase}`} style={{ minWidth: 145, opacity: hasPPSelected ? 1 : 0.4 }}>
         <Select
           value={row.change_type || NONE}
           onValueChange={(v) => {
             const val = v === NONE ? "" : v;
             const vl = val.toLowerCase();
+            const ppBandMin = vl === "per admin pp"
+              ? ppBands.find((b) => b.convention === row.pp_level)?.band_min ?? null
+              : null;
             const newInput =
               vl === "cpi increase"
                 ? String(cpiRate)
-                : vl === "fixed rate" || vl === "per admin pp"
-                  ? String(emp.current_rate ?? "")
-                  : row.change_input;
+                : vl === "per admin pp"
+                  ? String(ppBandMin ?? emp.current_rate ?? "")
+                  : vl === "fixed rate"
+                    ? String(emp.current_rate ?? "")
+                    : row.change_input;
             onChange("change_type", val);
             onChange("change_input", newInput);
             onSave({ change_type: val, change_input: newInput });
           }}
-          disabled={locked}
+          disabled={locked || !hasPPSelected}
         >
           <SelectTrigger className="h-7 w-full text-xs px-2">
             <SelectValue />
@@ -1125,7 +1256,7 @@ function ReviewRow({
       </td>
 
       {/* ── Input ───────────────────────────────────────────────────────── */}
-      <td className={`${tdBase} text-right`} style={{ minWidth: 84 }}>
+      <td className={`${tdBase} text-right`} style={{ minWidth: 84, opacity: hasPPSelected ? 1 : 0.4 }}>
         {kind === "none" ? (
           <span style={{ color: "var(--neutral-300)" }}>—</span>
         ) : (
@@ -1138,17 +1269,17 @@ function ReviewRow({
               step="0.01"
               min="0"
               value={row.change_input}
-              readOnly={cpiLocked}
-              onChange={(e) => !cpiLocked && onChange("change_input", e.target.value)}
-              onBlur={(e) => { if (!cpiLocked) onSave({ change_input: e.target.value }); }}
-              disabled={locked}
+              readOnly={cpiLocked || !hasPPSelected}
+              onChange={(e) => !cpiLocked && hasPPSelected && onChange("change_input", e.target.value)}
+              onBlur={(e) => { if (!cpiLocked && hasPPSelected) onSave({ change_input: e.target.value }); }}
+              disabled={locked || !hasPPSelected}
               className="w-16 rounded border px-1.5 py-1 text-right text-xs tabular-nums focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
               style={{
                 borderColor: "var(--neutral-200)",
-                background: cpiLocked ? "var(--neutral-50)" : "white",
+                background: (cpiLocked || !hasPPSelected) ? "var(--neutral-50)" : "white",
                 color: "var(--neutral-800)",
                 ...mono,
-                cursor: cpiLocked ? "default" : "text",
+                cursor: (cpiLocked || !hasPPSelected) ? "default" : "text",
               }}
             />
             {kind === "percent" && (
@@ -1167,7 +1298,7 @@ function ReviewRow({
         }}>
           {row.proposed_rate != null ? formatRate(row.proposed_rate) : "—"}
         </div>
-        {annualProposed && (
+        {!!annualProposed && (
           <div style={{ fontSize: 10, color: "#64748b", marginTop: 1 }}>
             {formatAnnual(annualProposed)}/yr
           </div>
@@ -1191,27 +1322,22 @@ function ReviewRow({
 
       {/* ── Letter ──────────────────────────────────────────────────────── */}
       <td className={`${tdBase} text-center`}>
-        <Select
-          value={row.letter_type || NONE}
-          onValueChange={(v) => {
-            const val = v === NONE ? "" : v;
-            onChange("letter_type", val);
-            onSave({ letter_type: val });
-          }}
-          disabled={locked}
-        >
-          <SelectTrigger className="h-7 w-16 text-xs px-2 mx-auto">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={NONE} className="text-xs italic" style={{ color: "var(--neutral-400)" }}>
-              —
-            </SelectItem>
-            {LETTER_TYPES.map((t) => (
-              <SelectItem key={t} value={t} className="text-xs">{t}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        {/* Auto-inferred — display only */}
+        {row.letter_type ? (
+          <span
+            className="inline-flex items-center justify-center rounded-md text-xs font-bold tabular-nums"
+            style={{
+              width: 28, height: 28,
+              background: "#f1f5f9",
+              border: "1px solid #cbd5e1",
+              color: "#334155",
+            }}
+          >
+            {row.letter_type}
+          </span>
+        ) : (
+          <span style={{ color: "var(--neutral-300)", fontSize: 12 }}>—</span>
+        )}
         {/* Draft PDF download — only when letter assigned and compliance clean */}
         {row.letter_type && ["A", "B", "C"].includes(row.letter_type) &&
          row.compliance.overall === "ok" && row.proposed_rate && (
@@ -1251,41 +1377,7 @@ function ReviewRow({
         />
       </td>
 
-      {/* ── History columns ─────────────────────────────────────────────── */}
-      {showHistory && <>
-        <HistCell value={emp.hist_award_level_changed} />
-        <HistCell value={emp.hist_rate_changed} />
-        <HistCell value={emp.hist_above_award_rate} />
-        <HistCell value={emp.hist_above_pp_rate} />
-        <HistCell value={emp.hist_above_pp_max} />
-      </>}
     </tr>
-  );
-}
-
-function HistCell({ value }: { value: boolean | null | undefined }) {
-  return (
-    <td
-      className="px-3 py-4 text-center align-top text-sm"
-    >
-      {value === null || value === undefined ? (
-        <span style={{ color: "var(--neutral-600)" }}>—</span>
-      ) : value ? (
-        <span
-          className="inline-flex items-center justify-center rounded-full px-2 py-0.5 text-[10px] font-bold"
-          style={{ background: "#14532d", color: "#86efac" }}
-        >
-          Yes
-        </span>
-      ) : (
-        <span
-          className="inline-flex items-center justify-center rounded-full px-2 py-0.5 text-[10px] font-bold"
-          style={{ background: "#450a0a", color: "#fca5a5" }}
-        >
-          No
-        </span>
-      )}
-    </td>
   );
 }
 
@@ -1303,15 +1395,11 @@ function CompliancePanel({
   locked: boolean;
   onUpdate: (updated: EmployeeWithCompliance) => void;
 }) {
-  const [showPassing, setShowPassing] = useState(false);
-
   // Sort: fail → warn → suppressed → ok
   const ORDER: Record<string, number> = { fail: 0, warn: 1, suppressed: 2, ok: 3 };
   const sorted = [...compliance.checks].sort(
     (a, b) => (ORDER[a.status] ?? 9) - (ORDER[b.status] ?? 9),
   );
-  const actionChecks = sorted.filter((c) => c.status === "fail" || c.status === "warn");
-  const passChecks   = sorted.filter((c) => c.status === "ok" || c.status === "suppressed");
 
   return (
     <div>
@@ -1332,55 +1420,19 @@ function CompliancePanel({
         )}
       </div>
 
-      {/* Needs-attention checks (fail + warn) */}
-      {actionChecks.length > 0 && (
-        <div className="space-y-2 mb-3">
-          {actionChecks.map((check) => (
-            <CheckCard
-              key={check.label}
-              check={check}
-              suppInfo={compliance.suppressions.find((s) => s.check_label === check.label)}
-              empId={emp.id}
-              locked={locked}
-              onUpdate={onUpdate}
-            />
-          ))}
-        </div>
-      )}
-
-      {/* Passing checks — collapsed by default */}
-      {passChecks.length > 0 && (
-        <div>
-          <button
-            onClick={() => setShowPassing((v) => !v)}
-            className="flex items-center gap-1.5 text-xs font-medium"
-            style={{ color: "#64748b" }}
-          >
-            <span
-              className="inline-flex h-4 w-4 items-center justify-center rounded-full text-[9px] font-bold"
-              style={{ background: "#dcfce7", color: "#166534" }}
-            >
-              {passChecks.length}
-            </span>
-            {showPassing ? "Hide" : "Show"} passing checks
-            <span style={{ fontSize: 10 }}>{showPassing ? "▲" : "▼"}</span>
-          </button>
-          {showPassing && (
-            <div className="mt-2 grid grid-cols-1 gap-1.5 sm:grid-cols-2 lg:grid-cols-3">
-              {passChecks.map((check) => (
-                <CheckCard
-                  key={check.label}
-                  check={check}
-                  suppInfo={compliance.suppressions.find((s) => s.check_label === check.label)}
-                  empId={emp.id}
-                  locked={locked}
-                  onUpdate={onUpdate}
-                />
-              ))}
-            </div>
-          )}
-        </div>
-      )}
+      {/* All checks — fail/warn prominent, ok/suppressed compact */}
+      <div className="space-y-2">
+        {sorted.map((check) => (
+          <CheckCard
+            key={check.label}
+            check={check}
+            suppInfo={compliance.suppressions.find((s) => s.check_label === check.label)}
+            empId={emp.id}
+            locked={locked}
+            onUpdate={onUpdate}
+          />
+        ))}
+      </div>
     </div>
   );
 }
@@ -1404,7 +1456,10 @@ function CheckCard({
   const [apiError, setApiError] = useState<string | null>(null);
 
   const isSuppressed = check.status === "suppressed";
-  const canSuppress = check.status === "warn" && !locked && check.label !== "Pay progression";
+  const canSuppress =
+    check.status === "warn" &&
+    !locked &&
+    !["Pay progression", "PP band minimum"].includes(check.label);
   const canUnsuppress = isSuppressed && !locked;
 
   const statusStyles = {
@@ -1713,3 +1768,9 @@ function formatAnnual(v: number): string {
   if (v >= 1_000)     return `$${Math.round(v / 1_000)}k`;
   return `$${Math.round(v)}`;
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+//  PPLevelPicker — imported from @/components/pp-level-picker (shared with
+//  approvals-client so both pages stay in sync).
+// ─────────────────────────────────────────────────────────────────────────────

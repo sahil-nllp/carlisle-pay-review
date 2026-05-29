@@ -35,7 +35,7 @@ class CycleResponse(BaseModel):
     signatory_company: str | None
     hr_email: str | None
     status: str
-    wage_model_filename: str | None
+    reference_data_ready: bool = False
     created_at: datetime
 
 
@@ -64,15 +64,16 @@ class EmployeeResponse(BaseModel):
     emp_num: str
     first_name: str
     last_name: str
+    preferred_name: str | None = None
     email: str | None
     age: int | None
     site: str
     department: str | None
     category: str | None
+    job_classification: str | None = None
     hours_per_week: float | None
-    fy25_award: str | None
+    current_award: str | None
     current_rate: float | None
-    fy26_award: str | None
     pp_level: str | None
     change_type: str | None
     proposed_rate: float | None

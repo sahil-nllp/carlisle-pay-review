@@ -6,7 +6,8 @@ import "server-only";
 
 import { cookies } from "next/headers";
 
-import type { EmployeeWithCompliance, SiteSummary } from "@/lib/review";
+import type { AwardRateSummary, EmployeeWithCompliance, SiteSummary } from "@/lib/review";
+import type { PPBand } from "@/lib/pp-bands";
 
 const API_URL =
   process.env.API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
@@ -42,5 +43,19 @@ export async function getSiteEmployeesServer(
   const data = await serverFetch<EmployeeWithCompliance[]>(
     `/api/v1/cycles/${cycleId}/sites/${encodeURIComponent(site)}/employees`,
   );
+  return data ?? [];
+}
+
+export async function getAwardRatesServer(
+  cycleId: number,
+): Promise<AwardRateSummary[]> {
+  const data = await serverFetch<AwardRateSummary[]>(
+    `/api/v1/cycles/${cycleId}/award-rates`,
+  );
+  return data ?? [];
+}
+
+export async function getPPBandsServer(cycleId: number): Promise<PPBand[]> {
+  const data = await serverFetch<PPBand[]>(`/api/v1/cycles/${cycleId}/pp-bands`);
   return data ?? [];
 }

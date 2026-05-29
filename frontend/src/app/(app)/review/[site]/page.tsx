@@ -1,7 +1,7 @@
 import Link from "next/link";
 
 import { getCurrentCycleServer } from "@/lib/cycles.server";
-import { getSiteEmployeesServer, getSiteSummariesServer } from "@/lib/review.server";
+import { getAwardRatesServer, getPPBandsServer, getSiteEmployeesServer, getSiteSummariesServer } from "@/lib/review.server";
 import { SiteReviewClient } from "@/components/site-review-client";
 
 interface Props {
@@ -27,9 +27,11 @@ export default async function SiteReviewPage({ params }: Props) {
     );
   }
 
-  const [employees, siteSummaries] = await Promise.all([
+  const [employees, siteSummaries, awardRates, ppBands] = await Promise.all([
     getSiteEmployeesServer(cycle.id, site),
     getSiteSummariesServer(cycle.id),
+    getAwardRatesServer(cycle.id),
+    getPPBandsServer(cycle.id),
   ]);
 
   const approvalStatus =
@@ -67,6 +69,8 @@ export default async function SiteReviewPage({ params }: Props) {
         initialEmployees={employees}
         cpiRate={cycle.cpi_rate}
         approvalStatus={approvalStatus}
+        awardRates={awardRates}
+        ppBands={ppBands}
       />
     </div>
   );

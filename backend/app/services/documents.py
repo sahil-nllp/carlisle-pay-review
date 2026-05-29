@@ -75,7 +75,7 @@ def _build_letter_doc(
     first_name = emp.first_name or "[First Name]"
     current_rate = float(emp.current_rate) if emp.current_rate else 0.0
     proposed_rate = float(emp.proposed_rate) if emp.proposed_rate else 0.0
-    award_level = emp.fy26_award or ""
+    award_level = emp.current_award or ""
 
     doc = Document()
 
@@ -247,7 +247,7 @@ def _build_letter_pdf(
     first_name    = emp.first_name or "[First Name]"
     current_rate  = float(emp.current_rate)  if emp.current_rate  else 0.0
     proposed_rate = float(emp.proposed_rate) if emp.proposed_rate else 0.0
-    award_level   = emp.fy26_award or ""
+    award_level   = emp.current_award or ""
 
     pdf = FPDF(orientation="P", unit="mm", format="A4")
     pdf.set_auto_page_break(auto=True, margin=25)
@@ -475,7 +475,7 @@ def generate_ukg_upload(
         ("First Name",            True,  ""),
         ("Last Name",             True,  ""),
         ("New Hourly Rate",       True,  "Approved proposed rate"),
-        ("Award Classification",  True,  "FY26 award level"),
+        ("Award Classification",  True,  "Current award level"),
         ("Effective Date",        True,  eff),
         ("Site",                  False, ""),
         ("Department",            False, ""),
@@ -522,7 +522,7 @@ def generate_ukg_upload(
             emp.first_name,
             emp.last_name,
             rate,
-            emp.fy26_award or "",
+            emp.current_award or "",
             eff,
             emp.site,
             emp.department or "",
@@ -580,9 +580,9 @@ def generate_regional_excel(
         ("Department",      20),
         ("Category",        14),
         ("Hrs/Wk",           8),
-        ("FY25 Award",      20),
+        ("Current Award",   20),
         ("Current Rate",    13),
-        ("FY26 Award",      20),
+        ("Proposed Award",  20),
         ("PP Level",        32),
         ("Proposed Rate",   13),
         ("$ Change",        11),
@@ -632,9 +632,9 @@ def generate_regional_excel(
             emp.department or "",
             emp.category or "",
             emp.hours_per_week,
-            emp.fy25_award or "",
+            emp.current_award or "",
             cr if cr else None,
-            emp.fy26_award or "",
+            emp.proposed_award or "",
             emp.pp_level or "",
             pr if pr else None,
             delta,

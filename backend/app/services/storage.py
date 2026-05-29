@@ -40,6 +40,39 @@ def save_to_staging(filename: str, data: bytes) -> Path:
     return path
 
 
+def new_staging_session() -> tuple[str, Path]:
+    """Create a fresh staging session dir for a multi-file upload.
+
+    Returns (staging_id, path_to_dir).
+    """
+    sid = uuid4().hex
+    path = _ensure_dir(staging_dir() / sid)
+    return sid, path
+
+
+def staging_session_path(staging_id: str) -> Path:
+    """Return the dir for a given staging session (may not exist)."""
+    return staging_dir() / staging_id
+
+
+def save_to_session(session_dir: Path, filename: str, data: bytes) -> Path:
+    """Save a named file into a staging session dir."""
+    safe = _safe_filename(filename)
+    path = session_dir / safe
+    path.write_bytes(data)
+    return path
+
+
+def cleanup_staging_session(staging_id: str) -> None:
+    """Remove a whole staging session dir + all files in it."""
+    p = staging_session_path(staging_id)
+    if p.exists():
+        try:
+            shutil.rmtree(p)
+        except OSError:
+            pass
+
+
 def move_to_cycle(staging_path: Path, cycle_id: int, filename: str) -> Path:
     """Move a staged upload into a cycle's permanent location."""
     safe = _safe_filename(filename)

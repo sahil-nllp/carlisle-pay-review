@@ -1,9 +1,9 @@
 /**
- * Client-side API helpers for the /cycles endpoints.
+ * Client-side API helpers for the /cycles endpoints (4-file upload flow).
  */
 import { api } from "@/lib/api";
 
-// ── Types (mirror backend schemas) ──────────────────────────────────────────
+// ── Cycle types ─────────────────────────────────────────────────────────────
 export interface Cycle {
   id: number;
   fy_label: string;
@@ -18,7 +18,7 @@ export interface Cycle {
   signatory_company: string | null;
   hr_email: string | null;
   status: string;
-  wage_model_filename: string | null;
+  reference_data_ready: boolean;
   created_at: string;
 }
 
@@ -29,6 +29,7 @@ export interface CycleMetadata {
   cpi_rate: number;
 }
 
+// ── Diff types ──────────────────────────────────────────────────────────────
 export type DiffKind = "new" | "removed" | "changed" | "unchanged";
 
 export interface EmployeeDiffRow {
@@ -39,25 +40,58 @@ export interface EmployeeDiffRow {
   changes: Record<string, { old: string | number | null; new: string | number | null }>;
 }
 
-export interface UploadStaged {
-  staging_id: string;
+// ── Per-file summaries (returned by /upload-files) ──────────────────────────
+export interface EmployeeFileSummary {
   filename: string;
   sheet_name: string;
   columns_detected: string[];
-  row_count: number;
+  employees_parsed: number;
   warnings: string[];
+}
+
+export interface AwardSummaryFileSummary {
+  filename: string;
+  sheet_name: string;
+  award_rates: number;
+  off_award_rows: number;
+  junior_rates: number;
+  warnings: string[];
+}
+
+export interface PPFileSummary {
+  filename: string;
+  sheet_name: string;
+  stream: "admin" | "tech";
+  bands: number;
+  sections: string[];
+  warnings: string[];
+}
+
+// ── Combined staged-upload response ─────────────────────────────────────────
+export interface StagedUpload {
+  staging_id: string;
+  employee_file: EmployeeFileSummary;
+  award_summary: AwardSummaryFileSummary;
+  pp_admin: PPFileSummary;
+  pp_tech: PPFileSummary;
+
   current_cycle: Cycle | null;
-  summary: { new: number; removed: number; changed: number; unchanged: number; total: number };
-  preview: EmployeeDiffRow[];
+  employee_diff_summary: {
+    new: number; removed: number; changed: number; unchanged: number; total: number;
+  };
+  employee_diff_preview: EmployeeDiffRow[];
 }
 
 export type ApplyMode = "fresh" | "archive" | "merge";
 
-export interface UploadApplyResponse {
+export interface ApplyUploadResponse {
   cycle: Cycle;
   employees_inserted: number;
   employees_updated: number;
   employees_removed: number;
+  award_rates_loaded: number;
+  pp_bands_loaded: number;
+  junior_rates_loaded: number;
 }
 
 // ── Calls ────────────────────────────────────────────────────────────────────
@@ -69,10 +103,20 @@ export async function listCycles(): Promise<Cycle[]> {
   return api<Cycle[]>("/api/v1/cycles");
 }
 
-export async function uploadWageModel(file: File): Promise<UploadStaged> {
+export interface UploadInput {
+  employee_file: File;
+  award_summary: File;
+  pp_admin: File;
+  pp_tech: File;
+}
+
+export async function uploadFiles(files: UploadInput): Promise<StagedUpload> {
   const fd = new FormData();
-  fd.append("file", file);
-  return api<UploadStaged>("/api/v1/cycles/upload", {
+  fd.append("employee_file", files.employee_file);
+  fd.append("award_summary", files.award_summary);
+  fd.append("pp_admin", files.pp_admin);
+  fd.append("pp_tech", files.pp_tech);
+  return api<StagedUpload>("/api/v1/cycles/upload-files", {
     method: "POST",
     body: fd,
   });
@@ -80,18 +124,17 @@ export async function uploadWageModel(file: File): Promise<UploadStaged> {
 
 export async function applyUpload(args: {
   staging_id: string;
-  filename: string;
   metadata: CycleMetadata;
   mode: ApplyMode;
-}): Promise<UploadApplyResponse> {
-  return api<UploadApplyResponse>("/api/v1/cycles/upload/apply", {
+}): Promise<ApplyUploadResponse> {
+  return api<ApplyUploadResponse>("/api/v1/cycles/apply-upload", {
     method: "POST",
     body: args,
   });
 }
 
 export async function cancelUpload(staging_id: string): Promise<void> {
-  await api("/api/v1/cycles/upload/cancel", {
+  await api("/api/v1/cycles/cancel-upload", {
     method: "POST",
     body: { staging_id },
   });

@@ -10,6 +10,7 @@ from app.api.auth import router as auth_router
 from app.api.cycles import router as cycles_router
 from app.api.downloads import router as downloads_router
 from app.api.review import router as review_router
+from app.api.uploads import router as uploads_router
 from app.config import settings
 from app.database import engine
 
@@ -45,6 +46,7 @@ app.add_middleware(
 # ── Routers ──────────────────────────────────────────────────────────────────
 app.include_router(auth_router, prefix=settings.api_prefix)
 app.include_router(cycles_router, prefix=settings.api_prefix)
+app.include_router(uploads_router, prefix=settings.api_prefix)
 app.include_router(review_router, prefix=settings.api_prefix)
 app.include_router(downloads_router, prefix=settings.api_prefix)
 app.include_router(admin_router, prefix=settings.api_prefix)
