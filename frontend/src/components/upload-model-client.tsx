@@ -373,13 +373,9 @@ function CompareView({
             />
           </Field>
           <Field label="CPI %">
-            <input
-              type="number"
-              step="0.1"
-              value={meta.cpi_rate}
-              onChange={(e) => onMetaChange({ ...meta, cpi_rate: parseFloat(e.target.value) || 0 })}
-              className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400"
-            />
+            <div className="w-full rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-500 cursor-not-allowed">
+              {meta.cpi_rate}
+            </div>
           </Field>
           <Field label="Effective Date">
             <input
@@ -456,53 +452,6 @@ function CompareView({
         </div>
       </div>
 
-      {/* Diff preview */}
-      {staged.employee_diff_preview.length > 0 && (
-        <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
-          <table className="min-w-full text-sm">
-            <thead className="border-b border-slate-200 bg-slate-50 text-xs uppercase text-slate-500">
-              <tr>
-                <th className="px-4 py-2 text-left">Emp #</th>
-                <th className="px-4 py-2 text-left">Name</th>
-                <th className="px-4 py-2 text-left">Site</th>
-                <th className="px-4 py-2 text-left">Kind</th>
-                <th className="px-4 py-2 text-left">Changes</th>
-              </tr>
-            </thead>
-            <tbody>
-              {staged.employee_diff_preview.map((row) => (
-                <tr key={row.emp_num} className="border-b border-slate-100 last:border-0">
-                  <td className="px-4 py-2 text-slate-700">{row.emp_num}</td>
-                  <td className="px-4 py-2 text-slate-700">{row.name}</td>
-                  <td className="px-4 py-2 text-slate-700">{row.site}</td>
-                  <td className="px-4 py-2"><KindBadge kind={row.kind} /></td>
-                  <td className="px-4 py-2 text-xs text-slate-600">
-                    {row.kind === "changed" ? (
-                      <ul className="space-y-0.5">
-                        {Object.entries(row.changes).map(([field, ch]) => (
-                          <li key={field}>
-                            <span className="font-medium">{field}:</span>{" "}
-                            <span className="text-slate-400 line-through">{String(ch.old ?? "—")}</span>{" "}
-                            →{" "}
-                            <span className="text-slate-800">{String(ch.new ?? "—")}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    ) : (
-                      <span className="text-slate-400">—</span>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {ds.total > staged.employee_diff_preview.length && (
-            <div className="border-t border-slate-100 px-4 py-2 text-xs text-slate-500">
-              Showing top {staged.employee_diff_preview.length} of {ds.total} rows.
-            </div>
-          )}
-        </div>
-      )}
     </div>
   );
 }
@@ -575,16 +524,6 @@ function Stat({
       <div className="mt-0.5 text-xs uppercase tracking-wide text-slate-500">{label}</div>
     </div>
   );
-}
-
-function KindBadge({ kind }: { kind: string }) {
-  const map: Record<string, string> = {
-    new: "bg-emerald-100 text-emerald-800",
-    removed: "bg-rose-100 text-rose-800",
-    changed: "bg-amber-100 text-amber-800",
-    unchanged: "bg-slate-100 text-slate-700",
-  };
-  return <span className={`rounded px-2 py-0.5 text-xs font-medium ${map[kind] ?? ""}`}>{kind}</span>;
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
