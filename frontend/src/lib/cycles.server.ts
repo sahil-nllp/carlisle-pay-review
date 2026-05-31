@@ -66,5 +66,16 @@ export async function getCycleEmployeesServer(
   return data ?? [];
 }
 
+/** Return sorted, distinct site names for the current cycle (empty if none). */
+export async function getSiteNamesServer(): Promise<string[]> {
+  const cycle = await getCurrentCycleServer();
+  if (!cycle) return [];
+  const sites = await serverFetch<Array<{ site: string }>>(
+    `/api/v1/cycles/${cycle.id}/sites`,
+  );
+  if (!sites) return [];
+  return sites.map((s) => s.site).sort();
+}
+
 // (Unused export kept so this module's diff type is available wherever needed)
 export type { EmployeeDiffRow };

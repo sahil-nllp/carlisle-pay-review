@@ -33,7 +33,13 @@ const ROLE_BADGE: Record<string, { bg: string; color: string }> = {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-export function UsersClient({ initialUsers }: { initialUsers: AdminUser[] }) {
+export function UsersClient({
+  initialUsers,
+  sites = [],
+}: {
+  initialUsers: AdminUser[];
+  sites?: string[];
+}) {
   const router = useRouter();
   const [users, setUsers] = useState(initialUsers);
   const [showCreate, setShowCreate] = useState(false);
@@ -70,6 +76,7 @@ export function UsersClient({ initialUsers }: { initialUsers: AdminUser[] }) {
       {/* Create form */}
       {showCreate && (
         <CreateUserForm
+          sites={sites}
           onSuccess={onCreated}
           onCancel={() => setShowCreate(false)}
         />
@@ -161,6 +168,7 @@ export function UsersClient({ initialUsers }: { initialUsers: AdminUser[] }) {
                     <td colSpan={7} className="px-5 py-5" style={{ background: "var(--neutral-50)" }}>
                       <EditUserForm
                         user={u}
+                        sites={sites}
                         onSuccess={onPatched}
                         onCancel={() => setEditingId(null)}
                       />
@@ -180,9 +188,11 @@ export function UsersClient({ initialUsers }: { initialUsers: AdminUser[] }) {
 //  Create user form
 // ─────────────────────────────────────────────────────────────────────────────
 function CreateUserForm({
+  sites,
   onSuccess,
   onCancel,
 }: {
+  sites: string[];
   onSuccess: (u: AdminUser) => void;
   onCancel: () => void;
 }) {
@@ -264,14 +274,34 @@ function CreateUserForm({
           </Select>
         </Field>
         <Field label="Site (Regional Manager only)">
-          <input
-            type="text"
-            value={form.site ?? ""}
-            onChange={(e) => setForm((f) => ({ ...f, site: e.target.value || null }))}
-            className={INPUT}
-            placeholder="e.g. Bayside"
-            disabled={form.role !== "regional_manager"}
-          />
+          {sites.length > 0 ? (
+            <Select
+              value={form.site ?? "__none__"}
+              onValueChange={(v) => setForm((f) => ({ ...f, site: v === "__none__" ? null : v }))}
+              disabled={form.role !== "regional_manager"}
+            >
+              <SelectTrigger className="h-9 text-sm">
+                <SelectValue placeholder="Select site…" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__none__" className="text-xs italic" style={{ color: "var(--neutral-400)" }}>
+                  — None —
+                </SelectItem>
+                {sites.map((s) => (
+                  <SelectItem key={s} value={s}>{s}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : (
+            <input
+              type="text"
+              value={form.site ?? ""}
+              onChange={(e) => setForm((f) => ({ ...f, site: e.target.value || null }))}
+              className={INPUT}
+              placeholder="e.g. Bayside"
+              disabled={form.role !== "regional_manager"}
+            />
+          )}
         </Field>
       </div>
       {error && (
@@ -305,10 +335,12 @@ function CreateUserForm({
 // ─────────────────────────────────────────────────────────────────────────────
 function EditUserForm({
   user,
+  sites,
   onSuccess,
   onCancel,
 }: {
   user: AdminUser;
+  sites: string[];
   onSuccess: (u: AdminUser) => void;
   onCancel: () => void;
 }) {
@@ -363,14 +395,34 @@ function EditUserForm({
           </Select>
         </Field>
         <Field label="Site">
-          <input
-            type="text"
-            value={site}
-            onChange={(e) => setSite(e.target.value)}
-            className={INPUT}
-            disabled={role !== "regional_manager"}
-            placeholder="e.g. Bayside"
-          />
+          {sites.length > 0 ? (
+            <Select
+              value={site || "__none__"}
+              onValueChange={(v) => setSite(v === "__none__" ? "" : v)}
+              disabled={role !== "regional_manager"}
+            >
+              <SelectTrigger className="h-9 text-sm">
+                <SelectValue placeholder="Select site…" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__none__" className="text-xs italic" style={{ color: "var(--neutral-400)" }}>
+                  — None —
+                </SelectItem>
+                {sites.map((s) => (
+                  <SelectItem key={s} value={s}>{s}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : (
+            <input
+              type="text"
+              value={site}
+              onChange={(e) => setSite(e.target.value)}
+              className={INPUT}
+              disabled={role !== "regional_manager"}
+              placeholder="e.g. Bayside"
+            />
+          )}
         </Field>
         <Field label="New password (leave blank to keep)">
           <input
