@@ -264,9 +264,7 @@ export function SiteReviewClient({
   const saveRow = useCallback(
     async (
       emp: EmployeeWithCompliance,
-      patch: Partial<Pick<RowState, "change_type" | "change_input" | "proposed_award" | "letter_type" | "notes">> & {
-        pp_level?: string | null;
-      },
+      patch: RowPatch,
     ) => {
       const row = rows[emp.id];
       if (!row) return;
@@ -304,7 +302,7 @@ export function SiteReviewClient({
           ...proposedAwardPatch,
           ...ppLevelPatch,
           notes: (patch.notes ?? row.notes) || null,
-          ...("is_excluded" in patch ? { is_excluded: patch.is_excluded } : {}),
+          ...("is_excluded" in patch ? { is_excluded: patch.is_excluded as boolean } : {}),
         });
 
         // Discard stale response — a newer save has already landed

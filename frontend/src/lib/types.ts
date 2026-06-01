@@ -25,5 +25,6 @@ export interface LoginRequest {
 }
 
 export interface LoginResponse {
-  user: User;
+  otp_required: boolean;
+  email: string;
 }
