@@ -489,7 +489,7 @@ async def bulk_suggest(
     skipped = 0
     cpi_rate = float(cycle.cpi_rate)
     for emp in employees:
-        if emp.is_departed:
+        if emp.is_departed or emp.is_excluded:
             continue
         if emp.proposed_rate is not None and emp.proposed_rate > 0:
             skipped += 1
@@ -579,7 +579,7 @@ async def bulk_assign_letters(
     employees = await cycle_service.get_cycle_employees(db, cycle_id)
     site_emps = [
         e for e in employees
-        if e.site.lower() == site.lower() and not e.is_departed
+        if e.site.lower() == site.lower() and not e.is_departed and not e.is_excluded
     ]
 
     updated = 0
@@ -643,9 +643,9 @@ async def list_approvals(
     if not approvals:
         return []
 
-    # Get all employees to compute site aggregates
+    # Get all employees to compute site aggregates — excluded employees are skipped
     employees = await cycle_service.get_cycle_employees(db, cycle_id)
-    active_employees = [e for e in employees if not e.is_departed]
+    active_employees = [e for e in employees if not e.is_departed and not e.is_excluded]
 
     # Bulk-load suppressions so site hard-issue counts are accurate
     all_emp_ids = [e.id for e in active_employees]
@@ -740,11 +740,11 @@ async def submit_site(
     await _get_cycle_or_404(db, cycle_id)
     ctx = await cs.load_context(db, cycle_id)
 
-    # Count hard compliance issues
+    # Count hard compliance issues — excluded employees are ignored entirely
     employees = await cycle_service.get_cycle_employees(db, cycle_id)
     site_emps = [
         e for e in employees
-        if e.site.lower() == site.lower() and not e.is_departed
+        if e.site.lower() == site.lower() and not e.is_departed and not e.is_excluded
     ]
     hard_issues = sum(
         1

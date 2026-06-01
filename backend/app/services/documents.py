@@ -424,7 +424,7 @@ def generate_letters_zip(
 
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         for emp in employees:
-            if emp.is_departed:
+            if emp.is_departed or emp.is_excluded:
                 continue
             lt = (emp.letter_type or "").upper().strip()
             if lt not in ("A", "B", "C"):
@@ -507,7 +507,7 @@ def generate_ukg_upload(
     # Data rows
     row_num = 3
     for emp in employees:
-        if emp.is_departed:
+        if emp.is_departed or emp.is_excluded:
             continue
         if not emp.proposed_rate:
             continue
@@ -611,7 +611,7 @@ def generate_regional_excel(
         ws.column_dimensions[get_column_letter(i)].width = width
 
     # Data
-    active = [e for e in employees if not e.is_departed]
+    active = [e for e in employees if not e.is_departed and not e.is_excluded]
     for row_num, emp in enumerate(active, start=3):
         ws.row_dimensions[row_num].height = 17
         bg = GREY if row_num % 2 == 1 else WHITE

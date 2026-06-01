@@ -248,7 +248,7 @@ function ApprovalCard({
           getAwardRates(cycleId),
           getPPBands(cycleId),
         ]);
-        const active = data.filter((e) => !e.is_departed);
+        const active = data.filter((e) => !e.is_departed && !e.is_excluded);
         setEmployees(active);
         setRows(Object.fromEntries(active.map((e) => [e.id, initEmpRow(e, cpiRate)])));
         setAwardRates(rates);

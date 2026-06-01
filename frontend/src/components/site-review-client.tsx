@@ -648,7 +648,7 @@ export function SiteReviewClient({
         )}
         {tableSummary.belowAward === 0 && tableSummary.missingRate === 0 &&
          tableSummary.unresolvedWarn === 0 && (
-          <SummaryBadge icon="✓" count={active.length} label="all employees ready" bg="#f0fdf4" color="#16a34a" border="#bbf7d0" />
+          <SummaryBadge icon="✓" count={activeForStats.length} label="all employees ready" bg="#f0fdf4" color="#16a34a" border="#bbf7d0" />
         )}
       </div>
 
@@ -668,7 +668,7 @@ export function SiteReviewClient({
             {/* ── Toolbar row — lives inside thead so it spans the full table width ── */}
             <tr>
               <th
-                colSpan={13}
+                colSpan={14}
                 style={{
                   position: "sticky",
                   top: 0,
@@ -728,6 +728,7 @@ export function SiteReviewClient({
               <Th align="right" >Proposed Rate</Th>
               <Th align="center">Letter</Th>
               <Th align="left"  >Notes</Th>
+              <Th align="center">Actions</Th>
             </tr>
           </thead>
           <tbody>
@@ -766,7 +767,7 @@ export function SiteReviewClient({
                   {expandedId === emp.id && (
                     <tr key={`${emp.id}-panel`}>
                       <td
-                        colSpan={13}
+                        colSpan={14}
                         className="px-5 py-4"
                         style={{
                           borderBottom: "1px solid var(--neutral-100)",
@@ -931,6 +932,7 @@ function ReviewRow({
   onSave: (patch: RowPatch) => void;
   onToggleExclude: () => void;
 }) {
+  const [showConfirm, setShowConfirm] = React.useState(false);
   const isExcluded = row.is_excluded;
   // When excluded, treat the row as fully locked regardless of site status
   const effectiveLocked = locked || isExcluded;
@@ -986,31 +988,16 @@ function ReviewRow({
         </span>
       </td>
       {/* ── Name ────────────────────────────────────────────────────────── */}
-      <td className={tdBase} style={{ minWidth: 150 }}>
-        <div className="flex items-start justify-between gap-1">
-          <div
-            className="font-semibold"
-            style={{ color: isExcluded ? "#94a3b8" : "#0f172a", fontSize: "0.8125rem" }}
-          >
-            {emp.first_name} {emp.last_name}
-          </div>
-          {!locked && (
-            <button
-              onClick={onToggleExclude}
-              title={isExcluded ? "Re-include in review" : "Exclude from review"}
-              className="shrink-0 rounded px-1 py-0.5 text-[10px] font-semibold transition-colors hover:opacity-80"
-              style={isExcluded
-                ? { background: "#dcfce7", color: "#16a34a", border: "1px solid #bbf7d0" }
-                : { background: "#f1f5f9", color: "#94a3b8", border: "1px solid #e2e8f0" }
-              }
-            >
-              {isExcluded ? "Include" : "Exclude"}
-            </button>
-          )}
+      <td className={tdBase} style={{ minWidth: 130 }}>
+        <div
+          className="font-semibold"
+          style={{ color: isExcluded ? "#94a3b8" : "#0f172a", fontSize: "0.8125rem" }}
+        >
+          {emp.first_name} {emp.last_name}
         </div>
         {isExcluded && (
           <span className="mt-0.5 inline-block text-[10px] font-semibold uppercase tracking-wide" style={{ color: "#94a3b8" }}>
-            Excluded
+            Disabled
           </span>
         )}
       </td>
@@ -1317,6 +1304,71 @@ function ReviewRow({
             background: "white",
           }}
         />
+      </td>
+
+      {/* ── Actions (Disable / Enable) ───────────────────────────────── */}
+      <td className={`${tdBase} text-center`} style={{ minWidth: 90 }}>
+        {!locked && (
+          <>
+            {isExcluded ? (
+              <button
+                onClick={onToggleExclude}
+                className="rounded-md px-2.5 py-1 text-[11px] font-semibold transition-colors"
+                style={{ background: "#dcfce7", color: "#16a34a", border: "1px solid #bbf7d0" }}
+              >
+                Enable
+              </button>
+            ) : (
+              <button
+                onClick={() => setShowConfirm(true)}
+                className="rounded-md px-2.5 py-1 text-[11px] font-semibold transition-colors hover:opacity-80"
+                style={{ background: "#fee2e2", color: "#dc2626", border: "1px solid #fecaca" }}
+              >
+                Disable
+              </button>
+            )}
+          </>
+        )}
+
+        {/* Confirmation dialog */}
+        {showConfirm && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center"
+            style={{ background: "rgba(0,0,0,0.4)" }}
+            onClick={() => setShowConfirm(false)}
+          >
+            <div
+              className="w-80 rounded-xl p-6 shadow-xl"
+              style={{ background: "white", border: "1px solid var(--border)" }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="mb-1 text-sm font-bold" style={{ color: "#0f172a" }}>
+                Disable employee?
+              </div>
+              <p className="mb-5 text-xs leading-relaxed" style={{ color: "#64748b" }}>
+                <strong style={{ color: "#0f172a" }}>{emp.first_name} {emp.last_name}</strong> will
+                be grayed out and excluded from all compliance checks, payroll totals,
+                and the submission. You can re-enable them at any time.
+              </p>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => { setShowConfirm(false); onToggleExclude(); }}
+                  className="flex-1 rounded-lg py-2 text-xs font-semibold"
+                  style={{ background: "#dc2626", color: "white" }}
+                >
+                  Yes, disable
+                </button>
+                <button
+                  onClick={() => setShowConfirm(false)}
+                  className="flex-1 rounded-lg py-2 text-xs font-semibold"
+                  style={{ background: "#f1f5f9", color: "#475569", border: "1px solid #e2e8f0" }}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </td>
 
     </tr>
