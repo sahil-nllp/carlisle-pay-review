@@ -9,6 +9,7 @@ from app.models.employee import ChangeType, Employee, LetterType
 from app.models.generated_file import GeneratedFile
 from app.models.junior_rate import JuniorRate
 from app.models.pp_band import PPBand, PPStream
+from app.models.otp import EmailOTP
 from app.models.user import User, UserRole
 
 __all__ = [
@@ -27,6 +28,7 @@ __all__ = [
     "LetterType",
     "PPBand",
     "PPStream",
+    "EmailOTP",
     "User",
     "UserRole",
 ]

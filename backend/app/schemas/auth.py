@@ -7,6 +7,18 @@ class LoginRequest(BaseModel):
     password: str = Field(min_length=1, max_length=200)
 
 
+class LoginResponse(BaseModel):
+    """Returned after credentials are verified — OTP has been sent."""
+    otp_required: bool = True
+    # Echoed back so the frontend can pass it to /verify-otp
+    email: str
+
+
+class VerifyOtpRequest(BaseModel):
+    email: EmailStr
+    code: str = Field(min_length=6, max_length=6)
+
+
 class UserResponse(BaseModel):
     """Public view of a User — never includes the password hash."""
 
@@ -20,5 +32,5 @@ class UserResponse(BaseModel):
     is_active: bool
 
 
-class LoginResponse(BaseModel):
+class VerifyOtpResponse(BaseModel):
     user: UserResponse

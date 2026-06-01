@@ -212,9 +212,10 @@ async def list_sites(
     ctx = await cs.load_context(db, cycle_id)
     employees = await cycle_service.get_cycle_employees(db, cycle_id)
 
-    # Regional managers see only their own site
+    # Regional managers see only their own site(s); site field may be comma-separated
     if user.role == UserRole.REGIONAL_MANAGER.value and user.site:
-        employees = [e for e in employees if e.site.lower() == user.site.lower()]
+        allowed = {s.strip().lower() for s in user.site.split(",")}
+        employees = [e for e in employees if e.site.lower() in allowed]
 
     # Gather all approvals in one query
     stmt = select(Approval).where(Approval.cycle_id == cycle_id)
@@ -223,14 +224,14 @@ async def list_sites(
         row.site: row.status for row in result.scalars()
     }
 
-    # Bulk-load suppressions for all active employees in this cycle
-    active_emp_ids = [e.id for e in employees if not e.is_departed]
+    # Bulk-load suppressions for all active, non-excluded employees in this cycle
+    active_emp_ids = [e.id for e in employees if not e.is_departed and not e.is_excluded]
     sup_labels_map, _ = await _load_suppressions_for_employees(db, active_emp_ids)
 
-    # Build per-site aggregates
+    # Build per-site aggregates (skip departed and excluded employees)
     site_map: dict[str, dict] = {}
     for emp in employees:
-        if emp.is_departed:
+        if emp.is_departed or emp.is_excluded:
             continue
         site = emp.site
         if site not in site_map:
@@ -308,11 +309,11 @@ async def site_employees(
     await _get_cycle_or_404(db, cycle_id)
     ctx = await cs.load_context(db, cycle_id)
 
-    # Regional managers can only access their own site
+    # Regional managers can only access their own site(s)
     if (
         user.role == UserRole.REGIONAL_MANAGER.value
         and user.site
-        and user.site.lower() != site.lower()
+        and site.lower() not in {s.strip().lower() for s in user.site.split(",")}
     ):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Access denied")
 
@@ -348,11 +349,11 @@ async def patch_employee(
     if not emp:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Employee not found")
 
-    # Regional managers can only edit their own site
+    # Regional managers can only edit their own site(s)
     if (
         user.role == UserRole.REGIONAL_MANAGER.value
         and user.site
-        and user.site.lower() != emp.site.lower()
+        and emp.site.lower() not in {s.strip().lower() for s in user.site.split(",")}
     ):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Access denied")
 
@@ -408,6 +409,11 @@ async def patch_employee(
     if body.notes is not None:
         emp.notes = body.notes or None
         changed_fields["notes"] = emp.notes
+
+    # ── is_excluded ──────────────────────────────────────────────────────────
+    if body.is_excluded is not None and emp.is_excluded != body.is_excluded:
+        emp.is_excluded = body.is_excluded
+        changed_fields["is_excluded"] = emp.is_excluded
 
     # ── letter_type ───────────────────────────────────────────────────────────
     # If the client explicitly sent a letter_type value (approval-page override),
@@ -474,9 +480,10 @@ async def bulk_suggest(
     # Filter scope
     if body.site:
         employees = [e for e in employees if e.site.lower() == body.site.lower()]
-    # Regional managers limited to their own site
+    # Regional managers limited to their own site(s)
     if user.role == UserRole.REGIONAL_MANAGER.value and user.site:
-        employees = [e for e in employees if e.site.lower() == user.site.lower()]
+        allowed = {s.strip().lower() for s in user.site.split(",")}
+        employees = [e for e in employees if e.site.lower() in allowed]
 
     updated = 0
     skipped = 0
@@ -553,11 +560,11 @@ async def bulk_assign_letters(
     site = unquote(site)
     await _get_cycle_or_404(db, cycle_id)
 
-    # Regional managers can only touch their own site
+    # Regional managers can only touch their own site(s)
     if (
         user.role == UserRole.REGIONAL_MANAGER.value
         and user.site
-        and user.site.lower() != site.lower()
+        and site.lower() not in {s.strip().lower() for s in user.site.split(",")}
     ):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Access denied")
 
@@ -1188,11 +1195,11 @@ async def get_draft_letters_zip(
     cycle = await _get_cycle_or_404(db, cycle_id)
     ctx = await cs.load_context(db, cycle_id)
 
-    # Regional managers can only access their own site
+    # Regional managers can only access their own site(s)
     if (
         user.role == UserRole.REGIONAL_MANAGER.value
         and user.site
-        and user.site.lower() != site.lower()
+        and site.lower() not in {s.strip().lower() for s in user.site.split(",")}
     ):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Access denied")
 

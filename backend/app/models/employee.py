@@ -94,6 +94,7 @@ class Employee(Base, TimestampMixin):
 
     # Status flags
     is_departed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    is_excluded: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     def __repr__(self) -> str:  # pragma: no cover
         return f"<Employee {self.emp_num} {self.first_name} {self.last_name} @ {self.site}>"

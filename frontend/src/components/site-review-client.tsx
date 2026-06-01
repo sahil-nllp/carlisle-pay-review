@@ -64,6 +64,7 @@ interface RowState {
   letter_type: string;
   notes: string;
   proposed_rate: number | null;   // display-only; updated from server response
+  is_excluded: boolean;
   saveState: SaveState;
   error: string | null;
   compliance: EmployeeWithCompliance["compliance"];
@@ -81,6 +82,7 @@ function initRow(e: EmployeeWithCompliance, _cpiRate?: number): RowState {
     letter_type: e.letter_type ?? "",
     notes: e.notes ?? "",
     proposed_rate: e.proposed_rate ?? null,
+    is_excluded: e.is_excluded ?? false,
     saveState: "idle",
     error: null,
     compliance: e.compliance,
@@ -148,6 +150,7 @@ export function SiteReviewClient({
           letter_type: updated.letter_type ?? "",
           notes: updated.notes ?? "",
           proposed_rate: updated.proposed_rate ?? null,
+          is_excluded: updated.is_excluded ?? false,
           compliance: updated.compliance,
         },
       }));
@@ -163,6 +166,11 @@ export function SiteReviewClient({
     () => employees.filter((e) => !e.is_departed),
     [employees],
   );
+  // Excluded employees are shown in the table but not counted in any stats
+  const activeForStats = useMemo(
+    () => active.filter((e) => !(rows[e.id]?.is_excluded)),
+    [active, rows],
+  );
 
   // ── Table summary badges ─────────────────────────────────────────────────
   const tableSummary = useMemo(() => {
@@ -173,7 +181,7 @@ export function SiteReviewClient({
     let noLetter      = 0;  // rate is set but no letter assigned
     let draftReady    = 0;  // letter assigned + compliance clean + rate set
 
-    for (const emp of active) {
+    for (const emp of activeForStats) {
       const row = rows[emp.id];
       if (!row) continue;
       if (row.compliance.checks.some((c) => c.label === "Award floor" && c.status === "fail"))
@@ -201,7 +209,7 @@ export function SiteReviewClient({
     let missingLetters       = 0; // no letter_type assigned
     let missingRates         = 0; // no proposed_rate
 
-    for (const emp of active) {
+    for (const emp of activeForStats) {
       const row = rows[emp.id];
       if (!row) continue;
       if (row.compliance.overall === "fail" || row.compliance.overall === "warn")
@@ -224,14 +232,13 @@ export function SiteReviewClient({
   }, [active, rows]);
 
   // ── Letter-assignment readiness ──────────────────────────────────────────
-  // The button is enabled only when every active employee:
+  // The button is enabled only when every active non-excluded employee:
   //   1. has a proposed rate set, AND
-  //   2. has no unresolved compliance issues (overall === "ok", which includes
-  //      suppressed checks being treated as resolved)
+  //   2. has no unresolved compliance issues (overall === "ok")
   const letterReadiness = useMemo(() => {
     let missingRates      = 0;
     let unresolvedIssues  = 0;
-    for (const emp of active) {
+    for (const emp of activeForStats) {
       const row = rows[emp.id];
       if (!row) continue;
       if (!row.proposed_rate) missingRates++;
@@ -246,7 +253,7 @@ export function SiteReviewClient({
     let payrollCurrent = 0;
     let payrollProposed = 0;
     let issues = 0;
-    for (const emp of active) {
+    for (const emp of activeForStats) {
       const row = rows[emp.id];
       const hours = emp.hours_per_week ?? 0;
       payrollCurrent += (emp.current_rate ?? 0) * hours * 52;
@@ -300,6 +307,7 @@ export function SiteReviewClient({
           ...proposedAwardPatch,
           ...ppLevelPatch,
           notes: (patch.notes ?? row.notes) || null,
+          ...("is_excluded" in patch ? { is_excluded: patch.is_excluded } : {}),
         });
 
         // Discard stale response — a newer save has already landed
@@ -319,6 +327,7 @@ export function SiteReviewClient({
             letter_type: updated.letter_type ?? "",
             notes: updated.notes ?? "",
             proposed_rate: updated.proposed_rate ?? null,
+            is_excluded: updated.is_excluded ?? false,
             saveState: "saved",
             error: null,
             compliance: updated.compliance,
@@ -679,7 +688,12 @@ export function SiteReviewClient({
               >
                 <div className="flex items-center justify-between px-4" style={{ height: 44 }}>
                   <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--neutral-400)" }}>
-                    {active.length} active employees
+                    {activeForStats.length} active employees
+                    {active.length - activeForStats.length > 0 && (
+                      <span style={{ color: "var(--neutral-300)", marginLeft: 6 }}>
+                        · {active.length - activeForStats.length} excluded
+                      </span>
+                    )}
                   </span>
                   <div className="flex items-center gap-2">
                     {tableSummary.draftReady > 0 && (
@@ -751,6 +765,11 @@ export function SiteReviewClient({
                       }))
                     }
                     onSave={(patch) => saveRow(emp, patch)}
+                    onToggleExclude={() => {
+                      const next = !row.is_excluded;
+                      setRows((prev) => ({ ...prev, [emp.id]: { ...prev[emp.id], is_excluded: next } }));
+                      saveRow(emp, { is_excluded: next });
+                    }}
                   />
                   {expandedId === emp.id && (
                     <tr key={`${emp.id}-panel`}>
@@ -765,7 +784,7 @@ export function SiteReviewClient({
                         <CompliancePanel
                           emp={emp}
                           compliance={row.compliance}
-                          locked={locked}
+                          locked={locked || (rows[emp.id]?.is_excluded ?? false)}
                           onUpdate={handleEmployeeUpdated}
                         />
                       </td>
@@ -892,7 +911,7 @@ function Th({
 //  Row component
 // ─────────────────────────────────────────────────────────────────────────────
 type RowPatch = Partial<
-  Pick<RowState, "change_type" | "change_input" | "proposed_award" | "pp_level" | "notes">
+  Pick<RowState, "change_type" | "change_input" | "proposed_award" | "pp_level" | "notes" | "is_excluded">
 >;
 
 function ReviewRow({
@@ -906,6 +925,7 @@ function ReviewRow({
   onToggleExpand,
   onChange,
   onSave,
+  onToggleExclude,
 }: {
   emp: EmployeeWithCompliance;
   row: RowState;
@@ -917,7 +937,12 @@ function ReviewRow({
   onToggleExpand: () => void;
   onChange: (field: keyof RowState, value: string) => void;
   onSave: (patch: RowPatch) => void;
+  onToggleExclude: () => void;
 }) {
+  const isExcluded = row.is_excluded;
+  // When excluded, treat the row as fully locked regardless of site status
+  const effectiveLocked = locked || isExcluded;
+
   // Step 1: reviewer explicitly selected a different award
   const hasAwardChange = Boolean(
     row.proposed_award && row.proposed_award !== emp.current_award
@@ -934,13 +959,13 @@ function ReviewRow({
   const kind = inputKind(row.change_type);
   const cpiLocked = isCpiLocked(row.change_type);
 
-  // Left-border accent + row tint by compliance status
-  const rowAccent =
-    overall === "fail" ? "var(--red-500)"
+  // Left-border accent + row tint by compliance status (overridden when excluded)
+  const rowAccent = isExcluded ? "var(--neutral-300)"
+    : overall === "fail" ? "var(--red-500)"
     : overall === "warn" ? "var(--amber-400)"
     : "transparent";
-  const rowBg =
-    overall === "fail" ? "var(--red-50)"
+  const rowBg = isExcluded ? "var(--neutral-50)"
+    : overall === "fail" ? "var(--red-50)"
     : overall === "warn" ? "#fffbeb"
     : isExpanded ? "var(--neutral-50)"
     : "white";
@@ -959,6 +984,7 @@ function ReviewRow({
         borderBottom: "1px solid var(--neutral-100)",
         background: rowBg,
         borderLeft: `3px solid ${rowAccent}`,
+        opacity: isExcluded ? 0.55 : 1,
       }}
     >
       {/* ── Emp # ───────────────────────────────────────────────────────── */}
@@ -968,10 +994,33 @@ function ReviewRow({
         </span>
       </td>
       {/* ── Name ────────────────────────────────────────────────────────── */}
-      <td className={tdBase} style={{ minWidth: 130 }}>
-        <div className="font-semibold" style={{ color: "#0f172a", fontSize: "0.8125rem" }}>
-          {emp.first_name} {emp.last_name}
+      <td className={tdBase} style={{ minWidth: 150 }}>
+        <div className="flex items-start justify-between gap-1">
+          <div
+            className="font-semibold"
+            style={{ color: isExcluded ? "#94a3b8" : "#0f172a", fontSize: "0.8125rem" }}
+          >
+            {emp.first_name} {emp.last_name}
+          </div>
+          {!locked && (
+            <button
+              onClick={onToggleExclude}
+              title={isExcluded ? "Re-include in review" : "Exclude from review"}
+              className="shrink-0 rounded px-1 py-0.5 text-[10px] font-semibold transition-colors hover:opacity-80"
+              style={isExcluded
+                ? { background: "#dcfce7", color: "#16a34a", border: "1px solid #bbf7d0" }
+                : { background: "#f1f5f9", color: "#94a3b8", border: "1px solid #e2e8f0" }
+              }
+            >
+              {isExcluded ? "Include" : "Exclude"}
+            </button>
+          )}
         </div>
+        {isExcluded && (
+          <span className="mt-0.5 inline-block text-[10px] font-semibold uppercase tracking-wide" style={{ color: "#94a3b8" }}>
+            Excluded
+          </span>
+        )}
       </td>
 
       {/* ── Age ────────────────────────────────────────────────────────── */}
@@ -1043,7 +1092,7 @@ function ReviewRow({
                 onSave({ proposed_award: selected, pp_level: "", change_type: "No Change", change_input: "0" });
               }
             }}
-            disabled={locked}
+            disabled={effectiveLocked}
           >
             <SelectTrigger
               className="h-7 w-full text-xs px-2"
@@ -1066,7 +1115,7 @@ function ReviewRow({
               ))}
             </SelectContent>
           </Select>
-        ) : locked ? (
+        ) : effectiveLocked ? (
           /* Locked + no award rates → show proposed_award as text */
           row.proposed_award ? (
             <span style={{ fontSize: "0.8125rem", fontWeight: 700, color: "#065f46" }}>
@@ -1086,7 +1135,7 @@ function ReviewRow({
         )}
 
         {/* Level upgrade suggestion chip */}
-        {!hasAwardChange && !locked && row.compliance.next_level && (() => {
+        {!hasAwardChange && !effectiveLocked && row.compliance.next_level && (() => {
           const suggestedRate = awardRates.find(
             (r) => r.award_level === row.compliance.next_level
           )?.hourly_rate;
@@ -1126,14 +1175,14 @@ function ReviewRow({
           ppBands={ppBands}
           effectiveAward={effectiveAward}
           value={row.pp_level}
-          locked={locked || !effectiveAward}
+          locked={effectiveLocked || !effectiveAward}
           onSelect={(conv) => {
             onChange("pp_level", conv ?? "");
             onSave({ pp_level: conv });
           }}
         />
         {/* PP band ceiling suggestion — find a band for the same award that fits the proposed rate */}
-        {!locked && row.proposed_rate != null && (() => {
+        {!effectiveLocked && row.proposed_rate != null && (() => {
           const hasCeilingWarn = row.compliance.checks.some(
             (c) => c.label === "PP band ceiling" && c.status === "warn"
           );
@@ -1206,7 +1255,7 @@ function ReviewRow({
             onChange("change_input", newInput);
             onSave({ change_type: val, change_input: newInput });
           }}
-          disabled={locked || !hasPPSelected}
+          disabled={effectiveLocked || !hasPPSelected}
         >
           <SelectTrigger className="h-7 w-full text-xs px-2">
             <SelectValue />
@@ -1239,11 +1288,11 @@ function ReviewRow({
               readOnly={cpiLocked || !hasPPSelected}
               onChange={(e) => !cpiLocked && hasPPSelected && onChange("change_input", e.target.value)}
               onBlur={(e) => { if (!cpiLocked && hasPPSelected) onSave({ change_input: e.target.value }); }}
-              disabled={locked || !hasPPSelected}
+              disabled={effectiveLocked || !hasPPSelected}
               className="w-16 rounded border px-1.5 py-1 text-right text-xs tabular-nums focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
               style={{
                 borderColor: "var(--neutral-200)",
-                background: (cpiLocked || !hasPPSelected) ? "var(--neutral-50)" : "white",
+                background: (cpiLocked || !hasPPSelected || effectiveLocked) ? "var(--neutral-50)" : "white",
                 color: "var(--neutral-800)",
                 ...mono,
                 cursor: (cpiLocked || !hasPPSelected) ? "default" : "text",
@@ -1334,7 +1383,7 @@ function ReviewRow({
           onChange={(e) => onChange("notes", e.target.value)}
           onBlur={(e) => onSave({ notes: e.target.value })}
           placeholder="Add notes…"
-          disabled={locked}
+          disabled={effectiveLocked}
           className="w-full rounded border px-2 py-1 text-xs focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
           style={{
             borderColor: "var(--neutral-200)",

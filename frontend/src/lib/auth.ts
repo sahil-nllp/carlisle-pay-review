@@ -14,6 +14,13 @@ export async function login(credentials: LoginRequest): Promise<LoginResponse> {
   });
 }
 
+export async function verifyOtp(email: string, code: string): Promise<{ user: User }> {
+  return api<{ user: User }>("/api/v1/auth/verify-otp", {
+    method: "POST",
+    body: { email, code },
+  });
+}
+
 export async function logout(): Promise<void> {
   try {
     await api("/api/v1/auth/logout", { method: "POST" });

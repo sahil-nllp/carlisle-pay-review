@@ -88,6 +88,7 @@ class EmployeeWithCompliance(BaseModel):
     letter_type: str | None
     notes: str | None
     is_departed: bool
+    is_excluded: bool = False
 
     compliance: EmployeeCompliance = Field(default_factory=EmployeeCompliance)
 
@@ -105,6 +106,8 @@ class EmployeePatchRequest(BaseModel):
     pp_level: str | None = None
     letter_type: str | None = None
     notes: str | None = None
+    # Exclude from review (grayed-out / read-only, not counted in stats)
+    is_excluded: bool | None = None
 
 
 # ─────────────────────────────────────────────────────────────────────────────

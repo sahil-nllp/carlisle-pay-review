@@ -38,6 +38,12 @@ class Settings(BaseSettings):
     # Set to false when running on plain HTTP (no TLS termination)
     cookie_secure: bool = False
 
+    # ── Email / OTP ───────────────────────────────────────────────────────
+    resend_api_key: str = ""
+    resend_from_email: str = "security@nllphealth.com"
+    otp_expiry_minutes: int = 10
+    otp_max_attempts: int = 3
+
     # ── CORS ──────────────────────────────────────────────────────────────
     cors_origins: str = "http://localhost:3000"
 

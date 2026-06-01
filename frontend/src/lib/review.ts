@@ -72,6 +72,7 @@ export interface EmployeeWithCompliance {
   letter_type: string | null;
   notes: string | null;
   is_departed: boolean;
+  is_excluded: boolean;
 
   compliance: EmployeeCompliance;
 }
@@ -86,6 +87,8 @@ export interface EmployeePatch {
   pp_level?: string | null;
   letter_type?: string | null;
   notes?: string | null;
+  // Exclude from review (grayed-out, read-only, not counted in stats)
+  is_excluded?: boolean;
 }
 
 export interface AwardRateSummary {
