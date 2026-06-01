@@ -19,7 +19,7 @@ import {
   type EmployeeWithCompliance,
   type SuppressionInfo,
 } from "@/lib/review";
-import { filterPPOptionsForAward, type PPBand } from "@/lib/pp-bands";
+import { type PPBand } from "@/lib/pp-bands";
 import { PPLevelPicker } from "@/components/pp-level-picker";
 import {
   Select,
@@ -175,7 +175,6 @@ export function SiteReviewClient({
   // ── Table summary badges ─────────────────────────────────────────────────
   const tableSummary = useMemo(() => {
     let belowAward    = 0;  // proposed rate < award floor (fail)
-    let levelPending  = 0;  // system suggested level change, not yet accepted
     let missingRate   = 0;  // no proposed rate set at all
     let unresolvedWarn = 0; // has warn-level issues not suppressed
     let noLetter      = 0;  // rate is set but no letter assigned
@@ -186,8 +185,6 @@ export function SiteReviewClient({
       if (!row) continue;
       if (row.compliance.checks.some((c) => c.label === "Award floor" && c.status === "fail"))
         belowAward++;
-      if (row.compliance.next_level && !row.proposed_award)
-        levelPending++;
       if (!row.proposed_rate)
         missingRate++;
       if (row.compliance.overall === "warn")
@@ -200,7 +197,7 @@ export function SiteReviewClient({
       )
         draftReady++;
     }
-    return { belowAward, levelPending, missingRate, unresolvedWarn, noLetter, draftReady };
+    return { belowAward, missingRate, unresolvedWarn, noLetter, draftReady };
   }, [active, rows]);
 
   // ── Submit readiness ─────────────────────────────────────────────────────
@@ -645,9 +642,6 @@ export function SiteReviewClient({
         {tableSummary.missingRate > 0 && (
           <SummaryBadge icon="—" count={tableSummary.missingRate} label="missing proposed rate" bg="#fff7ed" color="#c2410c" border="#fed7aa" />
         )}
-        {tableSummary.levelPending > 0 && (
-          <SummaryBadge icon="↑" count={tableSummary.levelPending} label="level upgrade pending" bg="#eff6ff" color="#1d4ed8" border="#bfdbfe" />
-        )}
         {tableSummary.unresolvedWarn > 0 && (
           <SummaryBadge icon="⚠" count={tableSummary.unresolvedWarn} label="unresolved warnings" bg="#fffbeb" color="#b45309" border="#fde68a" />
         )}
@@ -655,7 +649,7 @@ export function SiteReviewClient({
           <SummaryBadge icon="✉" count={tableSummary.noLetter} label="no letter assigned" bg="#f8fafc" color="#475569" border="#cbd5e1" />
         )}
         {tableSummary.belowAward === 0 && tableSummary.missingRate === 0 &&
-         tableSummary.levelPending === 0 && tableSummary.unresolvedWarn === 0 && (
+         tableSummary.unresolvedWarn === 0 && (
           <SummaryBadge icon="✓" count={active.length} label="all employees ready" bg="#f0fdf4" color="#16a34a" border="#bbf7d0" />
         )}
       </div>
@@ -1134,39 +1128,6 @@ function ReviewRow({
           </div>
         )}
 
-        {/* Level upgrade suggestion chip */}
-        {!hasAwardChange && !effectiveLocked && row.compliance.next_level && (() => {
-          const suggestedRate = awardRates.find(
-            (r) => r.award_level === row.compliance.next_level
-          )?.hourly_rate;
-          return (
-            <button
-              onClick={() => {
-                const suggested = row.compliance.next_level!;
-                onChange("proposed_award", suggested);
-                onChange("pp_level", "");
-                onChange("change_type", "No Change");
-                onChange("change_input", "0");
-                onSave({ proposed_award: suggested, pp_level: "", change_type: "No Change", change_input: "0" });
-              }}
-              className="mt-2 flex items-start gap-1.5 rounded-md px-2 py-1.5 text-[10px] font-semibold transition-colors hover:opacity-80"
-              style={{
-                background: "#eff6ff",
-                border: "1px solid #bfdbfe",
-                color: "#1d4ed8",
-              }}
-            >
-              <span className="mt-px">↑</span>
-              <div style={{ textAlign: "left" }}>
-                <div>Suggest: {row.compliance.next_level}</div>
-                {suggestedRate != null && (
-                  <div style={{ color: "#93c5fd", fontWeight: 400 }}>{formatRate(suggestedRate)}</div>
-                )}
-              </div>
-            </button>
-          );
-        })()}
-
       </td>
 
       {/* ── PP Level (separate column) ───────────────────────────────────── */}
@@ -1181,39 +1142,6 @@ function ReviewRow({
             onSave({ pp_level: conv });
           }}
         />
-        {/* PP band ceiling suggestion — find a band for the same award that fits the proposed rate */}
-        {!effectiveLocked && row.proposed_rate != null && (() => {
-          const hasCeilingWarn = row.compliance.checks.some(
-            (c) => c.label === "PP band ceiling" && c.status === "warn"
-          );
-          if (!hasCeilingWarn) return null;
-          const filtered = filterPPOptionsForAward(ppBands, effectiveAward);
-          const better = filtered.find(
-            (b) => b.convention !== row.pp_level &&
-              (b.band_max === null || b.band_max >= row.proposed_rate!)
-          );
-          if (!better) return null;
-          return (
-            <button
-              onClick={() => {
-                onChange("pp_level", better.convention);
-                onSave({ pp_level: better.convention });
-              }}
-              className="mt-2 flex items-start gap-1.5 rounded-md px-2 py-1.5 text-[10px] font-semibold transition-colors hover:opacity-80"
-              style={{ background: "#fffbeb", border: "1px solid #fde68a", color: "#b45309" }}
-            >
-              <span className="mt-px">↑</span>
-              <div style={{ textAlign: "left" }}>
-                <div>Switch to: {better.carlisle_label ?? better.convention}</div>
-                <div style={{ color: "#fbbf24", fontWeight: 400 }}>
-                  {better.band_max != null
-                    ? `${formatRate(better.band_min!)}–${formatRate(better.band_max)}`
-                    : `${formatRate(better.band_min!)}+`}
-                </div>
-              </div>
-            </button>
-          );
-        })()}
       </td>
 
       {/* ── Current rate ────────────────────────────────────────────────── */}

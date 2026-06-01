@@ -17,7 +17,7 @@ import {
   type EmployeeWithCompliance,
   type SuppressionInfo,
 } from "@/lib/review";
-import { getPPBands, filterPPOptionsForAward, type PPBand } from "@/lib/pp-bands";
+import { getPPBands, type PPBand } from "@/lib/pp-bands";
 import { PPLevelPicker } from "@/components/pp-level-picker";
 import {
   Select,
@@ -714,27 +714,6 @@ function ApprovalEmpRow({
               </SelectContent>
             </Select>
             {hasAwardChange && <div style={{ fontSize: 10, color: "#065f46", marginTop: 3 }}>↑ from {emp.current_award ?? "—"}</div>}
-            {!hasAwardChange && row.compliance.next_level && (() => {
-              const sugRate = awardRates.find((r) => r.award_level === row.compliance.next_level)?.hourly_rate;
-              return (
-                <button
-                  onClick={() => {
-                    const s = row.compliance.next_level!;
-                    onChange("proposed_award", s); onChange("pp_level", "");
-                    onChange("change_type", "No Change"); onChange("change_input", "0");
-                    onSave({ proposed_award: s, pp_level: "", change_type: "No Change", change_input: "0" });
-                  }}
-                  className="mt-2 flex items-start gap-1.5 rounded-md px-2 py-1.5 text-[10px] font-semibold"
-                  style={{ background: "#eff6ff", border: "1px solid #bfdbfe", color: "#1d4ed8" }}
-                >
-                  <span className="mt-px">↑</span>
-                  <div style={{ textAlign: "left" }}>
-                    <div>Suggest: {row.compliance.next_level}</div>
-                    {sugRate != null && <div style={{ color: "#93c5fd", fontWeight: 400 }}>{formatRate(sugRate)}</div>}
-                  </div>
-                </button>
-              );
-            })()}
           </>
         ) : (
           hasAwardChange ? (
@@ -761,28 +740,6 @@ function ApprovalEmpRow({
               locked={!effectiveAward}
               onSelect={(conv) => { onChange("pp_level", conv ?? ""); onSave({ pp_level: conv }); }}
             />
-            {row.proposed_rate != null && (() => {
-              const hasCeilingWarn = row.compliance.checks.some((c) => c.label === "PP band ceiling" && c.status === "warn");
-              if (!hasCeilingWarn) return null;
-              const filtered = filterPPOptionsForAward(ppBands, effectiveAward);
-              const better = filtered.find((b) => b.convention !== row.pp_level && (b.band_max === null || b.band_max >= row.proposed_rate!));
-              if (!better) return null;
-              return (
-                <button
-                  onClick={() => { onChange("pp_level", better.convention); onSave({ pp_level: better.convention }); }}
-                  className="mt-2 flex items-start gap-1.5 rounded-md px-2 py-1.5 text-[10px] font-semibold"
-                  style={{ background: "#fffbeb", border: "1px solid #fde68a", color: "#b45309" }}
-                >
-                  <span className="mt-px">↑</span>
-                  <div style={{ textAlign: "left" }}>
-                    <div>Switch to: {better.carlisle_label ?? better.convention}</div>
-                    <div style={{ color: "#fbbf24", fontWeight: 400 }}>
-                      {better.band_max != null ? `${formatRate(better.band_min!)}–${formatRate(better.band_max)}` : `${formatRate(better.band_min!)}+`}
-                    </div>
-                  </div>
-                </button>
-              );
-            })()}
           </>
         ) : (
           row.pp_level ? (
