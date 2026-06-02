@@ -49,9 +49,10 @@ def _hash_code(code: str) -> str:
 @router.post("/login", response_model=LoginResponse)
 async def login(
     body: LoginRequest,
+    response: Response,
     db: AsyncSession = Depends(get_db),
 ) -> LoginResponse:
-    """Verify email + password, then send a 6-digit OTP to the user's email."""
+    """Verify email + password. If OTP_ENABLED, send a 6-digit code; otherwise log in directly."""
     result = await db.execute(select(User).where(User.email == body.email.lower()))
     user = result.scalar_one_or_none()
 
@@ -60,10 +61,27 @@ async def login(
     if not user.is_active:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account is disabled")
 
-    # Invalidate any existing OTPs for this user
+    # ── OTP disabled → log in directly ──────────────────────────────────────
+    if not settings.otp_enabled:
+        user.last_login_at = datetime.now(timezone.utc)
+        db.add(AuditLog(user_id=user.id, action="login"))
+        await db.commit()
+        await db.refresh(user)
+        token = sign_session(user.id)
+        response.set_cookie(
+            key=settings.session_cookie_name,
+            value=token,
+            max_age=settings.session_lifetime_hours * 3600,
+            httponly=True,
+            samesite="lax",
+            secure=settings.cookie_secure,
+            path="/",
+        )
+        return LoginResponse(otp_required=False, email=user.email)
+
+    # ── OTP enabled → send code ──────────────────────────────────────────────
     await db.execute(delete(EmailOTP).where(EmailOTP.user_id == user.id))
 
-    # Generate 6-digit code
     code = f"{secrets.randbelow(1_000_000):06d}"
     expires_at = datetime.now(timezone.utc) + timedelta(minutes=settings.otp_expiry_minutes)
 
@@ -75,7 +93,6 @@ async def login(
     db.add(otp)
     await db.commit()
 
-    # Send email (fire-and-forget style — if Resend is misconfigured, surface the error)
     try:
         email_service.send_otp(to_email=user.email, name=user.name.split()[0], code=code)
     except Exception as exc:

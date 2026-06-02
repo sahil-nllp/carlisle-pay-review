@@ -48,13 +48,21 @@ function CredentialsStep({ onSuccess }: { onSuccess: (email: string) => void }) 
   const [error, setError]       = useState<string | null>(null);
   const [loading, setLoading]   = useState(false);
 
+  const router = useRouter();
+
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
     setLoading(true);
     try {
       const res = await login({ email, password });
-      onSuccess(res.email);
+      if (res.otp_required) {
+        onSuccess(res.email);
+      } else {
+        // OTP disabled — session cookie already set by backend, go straight in
+        router.refresh();
+        router.replace("/dashboard");
+      }
     } catch (err) {
       setError(extractError(err));
     } finally {

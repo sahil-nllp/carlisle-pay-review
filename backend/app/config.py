@@ -39,6 +39,7 @@ class Settings(BaseSettings):
     cookie_secure: bool = False
 
     # ── Email / OTP ───────────────────────────────────────────────────────
+    otp_enabled: bool = True          # set to false to skip OTP and log in directly
     resend_api_key: str = ""
     resend_from_email: str = "security@nllphealth.com"
     otp_expiry_minutes: int = 10
