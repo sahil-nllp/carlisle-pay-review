@@ -230,7 +230,7 @@ def _build_letter_pdf(
     fy_current = f"{fy_parts[0]}-{fy_parts[1]}" if len(fy_parts) == 2 else fy_label
     fy_prev    = f"{int(fy_parts[0]) - 1}-{fy_parts[0]}" if fy_parts else ""
 
-    letter_date    = _fmt_date(cycle.letter_date)
+    letter_date    = "[DATE]" if draft else _fmt_date(cycle.letter_date)
     effective_text = f"first full pay period on or after {_fmt_date(cycle.effective_date)}"
     super_old      = cycle.super_old or "11.5%"
     super_new      = cycle.super_new or "12.0%"

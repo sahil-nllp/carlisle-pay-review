@@ -54,8 +54,8 @@ export interface CycleSettingsRequest {
   effective_date?: string;
   consultation_deadline?: string | null;
   cpi_rate?: number;
-  super_old?: number | null;
-  super_new?: number | null;
+  super_old?: string | null;
+  super_new?: string | null;
   signatory_name?: string | null;
   signatory_title?: string | null;
   signatory_company?: string | null;

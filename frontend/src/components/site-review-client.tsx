@@ -693,7 +693,7 @@ export function SiteReviewClient({
             {/* ── Toolbar row — lives inside thead so it spans the full table width ── */}
             <tr>
               <th
-                colSpan={13}
+                colSpan={locked ? 12 : 13}
                 style={{
                   position: "sticky",
                   top: 0,
@@ -763,7 +763,7 @@ export function SiteReviewClient({
               <Th align="right" >Input</Th>
               <Th align="right" >Proposed Rate</Th>
               <Th align="center">Letter</Th>
-              <Th align="center">Actions</Th>
+              {!locked && <Th align="center">Actions</Th>}
             </tr>
           </thead>
           <tbody>
@@ -802,7 +802,7 @@ export function SiteReviewClient({
                   {expandedId === emp.id && (
                     <tr key={`${emp.id}-panel`}>
                       <td
-                        colSpan={13}
+                        colSpan={locked ? 12 : 13}
                         className="px-5 py-4"
                         style={{
                           borderBottom: "1px solid var(--neutral-100)",
@@ -1313,21 +1313,23 @@ function ReviewRow({
                 alert(err instanceof Error ? err.message : String(err)),
               )
             }
-            className="mt-1.5 flex w-full items-center justify-center gap-1 rounded-md px-2 py-1 text-[10px] font-semibold"
+            className="mt-1.5 flex w-full items-center justify-center gap-1 rounded-md px-2 py-1 text-[10px] font-semibold transition-colors hover:bg-blue-600 hover:text-white hover:border-blue-600"
+            title="Download draft letter"
             style={{
-              background: "#f0f9ff",
-              border: "1px solid #bae6fd",
-              color: "#0369a1",
+              background: "#0369a1",
+              border: "1px solid #0369a1",
+              color: "white",
+              cursor: "pointer",
             }}
           >
-            📄 Draft
+            ⬇ Draft
           </button>
         )}
       </td>
 
-      {/* ── Actions (Disable / Enable) ───────────────────────────────── */}
-      <td className={`${tdBase} text-center`} style={{ minWidth: 90 }}>
-        {!locked && (
+      {/* ── Actions (Disable / Enable) — hidden when site is locked ───── */}
+      {!locked && <td className={`${tdBase} text-center`} style={{ minWidth: 90 }}>
+        {(
           <>
             {isExcluded ? (
               <button
@@ -1388,7 +1390,7 @@ function ReviewRow({
             </div>
           </div>
         )}
-      </td>
+      </td>}
 
     </tr>
   );

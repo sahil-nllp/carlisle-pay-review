@@ -850,9 +850,10 @@ function ApprovalEmpRow({
                 <button
                   onClick={() => downloadDraftLetter(emp.id).catch((err) => alert(err instanceof Error ? err.message : String(err)))}
                   className="flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-semibold"
-                  style={{ background: "#f0f9ff", border: "1px solid #bae6fd", color: "#0369a1" }}
+                  title="Download draft letter"
+                  style={{ background: "#0369a1", border: "1px solid #0369a1", color: "white", cursor: "pointer" }}
                 >
-                  📄 Draft
+                  ⬇ Draft
                 </button>
               )}
             </div>

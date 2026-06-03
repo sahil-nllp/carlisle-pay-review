@@ -150,6 +150,8 @@ async def update_cycle_settings(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Cycle not found")
 
     changed: dict = {}
+    # super_old / super_new are stored as VARCHAR (used as display strings in letters)
+    VARCHAR_FIELDS = {"super_old", "super_new"}
     for field in (
         "letter_date", "effective_date", "consultation_deadline",
         "cpi_rate", "super_old", "super_new",
@@ -157,7 +159,8 @@ async def update_cycle_settings(
     ):
         val = getattr(body, field)
         if val is not None:
-            setattr(cycle, field, val)
+            db_val = str(val) if field in VARCHAR_FIELDS else val
+            setattr(cycle, field, db_val)
             changed[field] = str(val)
 
     if changed:

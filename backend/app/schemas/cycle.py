@@ -45,8 +45,8 @@ class CycleSettingsRequest(BaseModel):
     effective_date: date | None = None
     consultation_deadline: date | None = None
     cpi_rate: float | None = Field(default=None, ge=0, le=100)
-    super_old: float | None = Field(default=None, ge=0, le=100)
-    super_new: float | None = Field(default=None, ge=0, le=100)
+    super_old: str | None = Field(default=None, max_length=20)
+    super_new: str | None = Field(default=None, max_length=20)
     signatory_name: str | None = Field(default=None, max_length=200)
     signatory_title: str | None = Field(default=None, max_length=200)
     signatory_company: str | None = Field(default=None, max_length=200)
