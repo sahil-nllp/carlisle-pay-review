@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { getCurrentUser } from "@/lib/auth.server";
 import { getCurrentCycleServer } from "@/lib/cycles.server";
 import { getAwardRatesServer, getPPBandsServer, getSiteEmployeesServer, getSiteSummariesServer } from "@/lib/review.server";
 import { SiteReviewClient } from "@/components/site-review-client";
@@ -12,7 +13,7 @@ export default async function SiteReviewPage({ params }: Props) {
   const { site: encodedSite } = await params;
   const site = decodeURIComponent(encodedSite);
 
-  const cycle = await getCurrentCycleServer();
+  const [user, cycle] = await Promise.all([getCurrentUser(), getCurrentCycleServer()]);
 
   if (!cycle) {
     return (
@@ -37,6 +38,9 @@ export default async function SiteReviewPage({ params }: Props) {
   const approvalStatus =
     siteSummaries.find((s) => s.site.toLowerCase() === site.toLowerCase())
       ?.approval_status ?? "not_submitted";
+
+  // Senior management can view but not edit
+  const forceLocked = user?.role === "senior_management";
 
   return (
     <div>
@@ -69,6 +73,7 @@ export default async function SiteReviewPage({ params }: Props) {
         initialEmployees={employees}
         cpiRate={cycle.cpi_rate}
         approvalStatus={approvalStatus}
+        readOnly={forceLocked}
         awardRates={awardRates}
         ppBands={ppBands}
       />

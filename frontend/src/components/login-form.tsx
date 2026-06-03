@@ -142,9 +142,9 @@ function OtpStep({ email, onBack }: { email: string; onBack: () => void }) {
     setError(null);
     setLoading(true);
     try {
-      await verifyOtp(email, fullCode);
+      const { user } = await verifyOtp(email, fullCode);
       router.refresh();
-      router.replace("/dashboard");
+      router.replace(user.role === "payroll" ? "/downloads" : "/dashboard");
     } catch (err) {
       setError(extractError(err));
       setCode(["", "", "", "", "", ""]);       // clear for re-entry

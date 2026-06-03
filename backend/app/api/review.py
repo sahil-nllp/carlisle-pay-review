@@ -989,6 +989,10 @@ async def suppress_check(
     if not emp:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Employee not found")
 
+    appr = await _get_approval(db, emp.cycle_id, emp.site)
+    if appr and appr.status == ApprovalStatus.APPROVED.value:
+        raise HTTPException(status.HTTP_409_CONFLICT, "This site has been approved — notes are locked.")
+
     if body.check_label in _UNSUPPRESSIBLE_CHECKS:
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -1072,6 +1076,10 @@ async def unsuppress_check(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Employee not found")
 
     check_label = unquote(check_label)
+
+    appr = await _get_approval(db, emp.cycle_id, emp.site)
+    if appr and appr.status == ApprovalStatus.APPROVED.value:
+        raise HTTPException(status.HTTP_409_CONFLICT, "This site has been approved — notes are locked.")
 
     stmt = select(ComplianceSuppression).where(
         ComplianceSuppression.employee_id == emp_id,

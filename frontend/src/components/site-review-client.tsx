@@ -5,7 +5,6 @@ import React, { useCallback, useMemo, useState, useTransition } from "react";
 
 import { ApiError } from "@/lib/api";
 import {
-  bulkAssignLetters,
   downloadDraftLetter,
   downloadDraftLettersZip,
   getSiteEmployees,
@@ -102,6 +101,7 @@ export function SiteReviewClient({
   initialEmployees,
   cpiRate,
   approvalStatus = "not_submitted",
+  readOnly = false,
   awardRates = [],
   ppBands = [],
 }: {
@@ -110,10 +110,11 @@ export function SiteReviewClient({
   initialEmployees: EmployeeWithCompliance[];
   cpiRate: number;
   approvalStatus?: string;
+  readOnly?: boolean;
   awardRates?: AwardRateSummary[];
   ppBands?: PPBand[];
 }) {
-  const locked = approvalStatus === "pending" || approvalStatus === "approved";
+  const locked = readOnly || approvalStatus === "pending" || approvalStatus === "approved";
   const router = useRouter();
   const [employees, setEmployees] = useState<EmployeeWithCompliance[]>(
     initialEmployees,
@@ -131,7 +132,6 @@ export function SiteReviewClient({
   const toggleFilter = (f: Filter) => setActiveFilter((prev) => prev === f ? null : f);
   // Track the latest save ID per employee — used to discard stale in-flight responses
   const saveSeqRef = React.useRef<Record<number, number>>({});
-  const [isAssigningLetters, startAssigningLetters] = useTransition();
   const [isSubmitting, startSubmitting] = useTransition();
   const [submitResult, setSubmitResult] = useState<{
     status: "success" | "error";
@@ -139,6 +139,7 @@ export function SiteReviewClient({
   } | null>(null);
   const [showDeparted, setShowDeparted] = useState(false);
   const [isDraftZipping, setIsDraftZipping] = useState(false);
+  const [showSubmitConfirm, setShowSubmitConfirm] = useState(false);
 
   // Called when suppress / unsuppress returns a fresh employee record
   const handleEmployeeUpdated = useCallback(
@@ -230,19 +231,25 @@ export function SiteReviewClient({
 
   // ── Submit readiness ─────────────────────────────────────────────────────
   const submitReadiness = useMemo(() => {
-    let unresolvedCompliance = 0; // fail or warn (not suppressed)
-    let missingLetters       = 0; // no letter_type assigned
-    let missingRates         = 0; // no proposed_rate
+    let unresolvedCompliance = 0;
+    let missingLetters       = 0;
+    let missingRates         = 0;
+    const noChangeEmps: Array<{ emp_num: string; name: string }> = [];
 
     for (const emp of activeForStats) {
       const row = rows[emp.id];
       if (!row) continue;
       if (row.compliance.overall === "fail" || row.compliance.overall === "warn")
         unresolvedCompliance++;
-      if (!row.letter_type)
+      const hasChange =
+        (row.change_type && row.change_type.toLowerCase() !== "no change") ||
+        (row.letter_type != null && ["A", "B", "C"].includes(row.letter_type));
+      if (hasChange && !row.letter_type)
         missingLetters++;
-      if (!row.proposed_rate)
+      if (hasChange && !row.proposed_rate)
         missingRates++;
+      if (!hasChange)
+        noChangeEmps.push({ emp_num: emp.emp_num, name: `${emp.first_name} ${emp.last_name}` });
     }
 
     const blockers: string[] = [];
@@ -253,25 +260,9 @@ export function SiteReviewClient({
     if (missingLetters > 0)
       blockers.push(`${missingLetters} employee${missingLetters !== 1 ? "s" : ""} without a letter`);
 
-    return { ready: blockers.length === 0, blockers };
-  }, [active, rows]);
+    return { ready: blockers.length === 0, blockers, noChangeEmps };
+  }, [activeForStats, rows]);
 
-  // ── Letter-assignment readiness ──────────────────────────────────────────
-  // The button is enabled only when every active non-excluded employee:
-  //   1. has a proposed rate set, AND
-  //   2. has no unresolved compliance issues (overall === "ok")
-  const letterReadiness = useMemo(() => {
-    let missingRates      = 0;
-    let unresolvedIssues  = 0;
-    for (const emp of activeForStats) {
-      const row = rows[emp.id];
-      if (!row) continue;
-      if (!row.proposed_rate) missingRates++;
-      if (row.compliance.overall !== "ok") unresolvedIssues++;
-    }
-    const ready = missingRates === 0 && unresolvedIssues === 0;
-    return { missingRates, unresolvedIssues, ready };
-  }, [active, rows]);
 
   // ── Summary stats ────────────────────────────────────────────────────────
   const stats = useMemo(() => {
@@ -384,23 +375,6 @@ export function SiteReviewClient({
     [rows, cpiRate],
   );
 
-  // ── Auto-assign letters ──────────────────────────────────────────────────
-  function handleAssignLetters() {
-    startAssigningLetters(async () => {
-      try {
-        const res = await bulkAssignLetters(cycleId, site);
-        const data = await getSiteEmployees(cycleId, site);
-        setEmployees(data);
-        setRows(Object.fromEntries(data.map((e) => [e.id, initRow(e, cpiRate)])));
-        alert(`Letters assigned: ${res.updated} updated, ${res.skipped} skipped.`);
-      } catch (err) {
-        alert(
-          "Letter assignment failed: " +
-            (err instanceof Error ? err.message : String(err)),
-        );
-      }
-    });
-  }
 
   // ── Submit for approval ──────────────────────────────────────────────────
   function handleSubmit() {
@@ -435,7 +409,7 @@ export function SiteReviewClient({
             className="text-xl font-bold tabular-nums"
             style={{ color: "var(--neutral-900)", fontFamily: "var(--font-mono)" }}
           >
-            {active.length}
+            {activeForStats.length}
           </div>
           <div
             className="mt-1 text-[11px] font-semibold uppercase tracking-wider"
@@ -529,28 +503,24 @@ export function SiteReviewClient({
       </div>
 
       {/* ── Lock banner ───────────────────────────────────────────────────── */}
-      {locked && (
+      {(readOnly || approvalStatus === "pending" || approvalStatus === "approved") && (
         <div
           className="flex items-center gap-3 rounded-xl px-5 py-3.5 text-sm font-medium"
           style={
             approvalStatus === "approved"
-              ? {
-                  background: "var(--green-50)",
-                  border: "1px solid var(--green-100)",
-                  color: "var(--green-700)",
-                }
-              : {
-                  background: "var(--amber-100)",
-                  border: "1px solid var(--amber-500)",
-                  color: "var(--amber-700)",
-                }
+              ? { background: "var(--green-50)", border: "1px solid var(--green-100)", color: "var(--green-700)" }
+              : approvalStatus === "pending"
+              ? { background: "var(--amber-100)", border: "1px solid var(--amber-500)", color: "var(--amber-700)" }
+              : { background: "var(--neutral-100)", border: "1px solid var(--neutral-200)", color: "var(--neutral-600)" }
           }
         >
-          <span>{approvalStatus === "approved" ? "✅" : "🔒"}</span>
+          <span>{approvalStatus === "approved" ? "✅" : approvalStatus === "pending" ? "🔒" : "👁"}</span>
           <span>
             {approvalStatus === "approved"
               ? "This site has been approved — all fields are locked."
-              : "This site is pending approval — all fields are locked. Go to Approvals to action it."}
+              : approvalStatus === "pending"
+              ? "This site has been submitted and is awaiting approval — all fields are locked."
+              : "This site has not been submitted yet — you are viewing in read-only mode."}
           </span>
         </div>
       )}
@@ -558,39 +528,6 @@ export function SiteReviewClient({
       {/* ── Action bar ────────────────────────────────────────────────────── */}
       {!locked && (
         <div className="flex flex-wrap items-center gap-3">
-          <div
-            title={
-              !letterReadiness.ready
-                ? [
-                    letterReadiness.missingRates > 0 && `${letterReadiness.missingRates} missing proposed rate`,
-                    letterReadiness.unresolvedIssues > 0 && `${letterReadiness.unresolvedIssues} unresolved compliance issue${letterReadiness.unresolvedIssues !== 1 ? "s" : ""}`,
-                  ].filter(Boolean).join(" · ")
-                : undefined
-            }
-            className="relative"
-          >
-            <button
-              onClick={handleAssignLetters}
-              disabled={isAssigningLetters || !letterReadiness.ready}
-              className="rounded-lg px-4 py-2 text-sm font-semibold transition-colors"
-              style={{
-                border: `1px solid ${letterReadiness.ready ? "var(--border)" : "var(--neutral-200)"}`,
-                background: letterReadiness.ready ? "white" : "var(--neutral-50)",
-                color: letterReadiness.ready ? "var(--neutral-700)" : "var(--neutral-400)",
-                cursor: letterReadiness.ready ? "pointer" : "not-allowed",
-              }}
-            >
-              {isAssigningLetters ? "Assigning…" : "Auto-assign letters"}
-            </button>
-            {!letterReadiness.ready && (
-              <span
-                className="absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center rounded-full text-[9px] font-bold"
-                style={{ background: "var(--amber-400)", color: "white" }}
-              >
-                {letterReadiness.missingRates + letterReadiness.unresolvedIssues}
-              </span>
-            )}
-          </div>
           <div
             className="relative"
             title={
@@ -600,7 +537,7 @@ export function SiteReviewClient({
             }
           >
             <button
-              onClick={handleSubmit}
+              onClick={() => setShowSubmitConfirm(true)}
               disabled={isSubmitting || !submitReadiness.ready}
               className="rounded-lg px-4 py-2 text-sm font-semibold transition-colors"
               style={{
@@ -629,6 +566,62 @@ export function SiteReviewClient({
             Changes save automatically. Click a status badge to see compliance
             details.
           </span>
+        </div>
+      )}
+
+      {/* ── Submit confirmation modal ────────────────────────────────────── */}
+      {showSubmitConfirm && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center"
+          style={{ background: "rgba(0,0,0,0.4)" }}
+          onClick={() => setShowSubmitConfirm(false)}
+        >
+          <div
+            className="w-96 rounded-xl p-6 shadow-xl"
+            style={{ background: "white", border: "1px solid var(--border)" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-1 text-sm font-bold" style={{ color: "#0f172a" }}>
+              Submit for approval?
+            </div>
+            <p className="mb-3 text-xs leading-relaxed" style={{ color: "#64748b" }}>
+              This will lock all fields and send the site for approval.
+            </p>
+            {submitReadiness.noChangeEmps.length > 0 && (
+              <div
+                className="mb-4 rounded-lg px-3 py-2.5 text-xs"
+                style={{ background: "#fffbeb", border: "1px solid #fde68a", color: "#92400e" }}
+              >
+                <div className="mb-1.5 font-semibold">
+                  ⚠ {submitReadiness.noChangeEmps.length} employee{submitReadiness.noChangeEmps.length !== 1 ? "s" : ""} {submitReadiness.noChangeEmps.length !== 1 ? "have" : "has"} no award level or rate change and will not receive a letter:
+                </div>
+                <ul className="space-y-0.5">
+                  {submitReadiness.noChangeEmps.map((e) => (
+                    <li key={e.emp_num} style={{ color: "#78350f" }}>
+                      <span className="font-mono font-semibold">#{e.emp_num}</span> — {e.name}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            <div className="flex gap-2">
+              <button
+                onClick={() => { setShowSubmitConfirm(false); handleSubmit(); }}
+                disabled={isSubmitting}
+                className="flex-1 rounded-lg py-2 text-xs font-semibold disabled:opacity-50"
+                style={{ background: "var(--brand)", color: "white" }}
+              >
+                {isSubmitting ? "Submitting…" : "Yes, submit"}
+              </button>
+              <button
+                onClick={() => setShowSubmitConfirm(false)}
+                className="flex-1 rounded-lg py-2 text-xs font-semibold"
+                style={{ background: "#f1f5f9", color: "#475569", border: "1px solid #e2e8f0" }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

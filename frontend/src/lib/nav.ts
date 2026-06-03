@@ -16,7 +16,7 @@ export const NAV_ITEMS: NavItem[] = [
     label: "Dashboard",
     href: "/dashboard",
     group: "main",
-    roles: ["hr_admin", "regional_manager", "senior_management", "payroll"],
+    roles: ["hr_admin", "regional_manager", "senior_management"],
   },
   {
     label: "Review",

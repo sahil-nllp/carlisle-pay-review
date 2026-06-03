@@ -8,10 +8,10 @@ import type { User } from "@/lib/types";
 
 // Site-specific review pages (/review/[site]) auto-collapse the sidebar
 function isSiteReview(pathname: string) {
-  return /^\/review\/.+/.test(pathname);
+  return /^\/review\/.+/.test(pathname) || pathname === "/approvals";
 }
 
-export function LayoutClient({ user, children }: { user: User; children: React.ReactNode }) {
+export function LayoutClient({ user, pendingApprovals = 0, children }: { user: User; pendingApprovals?: number; children: React.ReactNode }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(true);
 
@@ -38,7 +38,7 @@ export function LayoutClient({ user, children }: { user: User; children: React.R
         }}
       >
         <div style={{ width: 240, height: "100%" }}>
-          <Sidebar user={user} />
+          <Sidebar user={user} pendingApprovals={pendingApprovals} />
         </div>
       </div>
 

@@ -71,7 +71,7 @@ function getInitials(name: string): string {
     .join("");
 }
 
-export function Sidebar({ user }: { user: User }) {
+export function Sidebar({ user, pendingApprovals = 0 }: { user: User; pendingApprovals?: number }) {
   const pathname = usePathname();
   const items = visibleNavItems(user.role);
   const mainItems = items.filter((i) => i.group === "main");
@@ -102,7 +102,7 @@ export function Sidebar({ user }: { user: User }) {
 
       {/* ── Navigation ────────────────────────────────── */}
       <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-5">
-        <NavGroup items={mainItems} pathname={pathname} />
+        <NavGroup items={mainItems} pathname={pathname} badges={{ "/approvals": pendingApprovals }} />
         {adminItems.length > 0 && (
           <NavGroup title="Admin" items={adminItems} pathname={pathname} />
         )}
@@ -141,10 +141,12 @@ function NavGroup({
   title,
   items,
   pathname,
+  badges = {},
 }: {
   title?: string;
   items: NavItem[];
   pathname: string;
+  badges?: Record<string, number>;
 }) {
   return (
     <div>
@@ -157,6 +159,7 @@ function NavGroup({
         {items.map((item) => {
           const active =
             pathname === item.href || pathname.startsWith(item.href + "/");
+          const badge = badges[item.href] ?? 0;
           return (
             <li key={item.href}>
               <Link
@@ -183,7 +186,15 @@ function NavGroup({
                 }}
               >
                 <span className="shrink-0 opacity-80">{icons[item.href]}</span>
-                {item.label}
+                <span className="flex-1">{item.label}</span>
+                {badge > 0 && (
+                  <span
+                    className="flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[11px] font-bold"
+                    style={{ background: "#ef4444", color: "white" }}
+                  >
+                    {badge}
+                  </span>
+                )}
               </Link>
             </li>
           );

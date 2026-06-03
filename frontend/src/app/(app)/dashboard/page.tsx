@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 
 import DashboardCharts from "@/components/dashboard-charts";
 import { getCurrentUser } from "@/lib/auth.server";
@@ -11,6 +12,7 @@ import { getSiteSummariesServer } from "@/lib/review.server";
 
 export default async function DashboardPage() {
   const user = (await getCurrentUser())!;
+  if (user.role === "payroll") redirect("/downloads");
   const cycle = await getCurrentCycleServer();
 
   if (!cycle) {

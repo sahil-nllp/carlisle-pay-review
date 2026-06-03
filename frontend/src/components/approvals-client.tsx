@@ -79,7 +79,6 @@ function initEmpRow(e: EmployeeWithCompliance, cpiRate: number): EmpRowState {
   };
 }
 
-const LETTER_TYPES = ["A", "B", "C"];
 
 type EmpRowPatch = Partial<{
   change_type: string;
@@ -178,34 +177,19 @@ export function ApprovalsClient({
       {decided.length > 0 && (
         <section>
           <div className="section-label mb-4">Decided</div>
-          <div className="overflow-hidden rounded-xl" style={{ background: "white", border: "1px solid var(--border)" }}>
-            <table className="min-w-full text-sm">
-              <thead>
-                <tr style={{ borderBottom: "1px solid var(--border)" }}>
-                  {["Site", "Staff", "Proposed Payroll", "Status", "Decided by", "Notes"].map((h, i) => (
-                    <th key={h} className={`px-5 py-3 text-[11px] font-semibold uppercase tracking-wider ${i === 1 || i === 2 ? "text-right" : "text-left"}`}
-                      style={{ background: "var(--neutral-50)", color: "var(--neutral-500)" }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {decided.map((a, idx) => (
-                  <tr key={a.site} style={{ borderBottom: idx < decided.length - 1 ? "1px solid var(--neutral-100)" : "none" }}>
-                    <td className="px-5 py-3 font-semibold" style={{ color: "var(--neutral-900)" }}>{a.site}</td>
-                    <td className="px-5 py-3 text-right tabular-nums" style={{ color: "var(--neutral-700)" }}>{a.staff}</td>
-                    <td className="px-5 py-3 text-right tabular-nums" style={{ color: "var(--neutral-700)", fontFamily: "var(--font-mono)", fontSize: "0.8125rem" }}>
-                      {formatCurrency(a.payroll_proposed)}
-                    </td>
-                    <td className="px-5 py-3"><StatusBadge status={a.status} /></td>
-                    <td className="px-5 py-3 text-sm" style={{ color: "var(--neutral-700)" }}>
-                      {a.decided_by ?? "—"}
-                      {a.decided_at && <span className="ml-1 text-xs" style={{ color: "var(--neutral-400)" }}>{formatDate(a.decided_at)}</span>}
-                    </td>
-                    <td className="px-5 py-3 text-xs italic" style={{ color: "var(--neutral-500)" }}>{a.decision_notes ?? "—"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="space-y-4">
+            {decided.map((a) => (
+              <ApprovalCard
+                key={a.site}
+                approval={a}
+                cycleId={cycleId}
+                cycleLabel={cycleLabel}
+                cpiRate={cpiRate}
+                ds={getDs(a.site)}
+                onCommentChange={(v) => setDs(a.site, { comment: v })}
+                onApprove={() => {}}
+              />
+            ))}
           </div>
         </section>
       )}
@@ -216,7 +200,7 @@ export function ApprovalsClient({
 // ─────────────────────────────────────────────────────────────────────────────
 //  Approval card — site summary + inline employee table + decision panel
 // ─────────────────────────────────────────────────────────────────────────────
-const TABLE_COL_COUNT = 14; // Emp#, Name, Age, Status, Current Award, Proposed Award, PP Level, Current Rate, Change Type, Input, Proposed Rate, Letter, Notes, Actions
+const TABLE_COL_COUNT = 13; // Emp#, Name, Age, Status, Current Award, Proposed Award, PP Level, Current Rate, Change Type, Input, Proposed Rate, Letter, Actions
 
 function ApprovalCard({
   approval: a, cycleId, cycleLabel, cpiRate, ds,
@@ -378,7 +362,6 @@ function ApprovalCard({
     { label: "Input",          align: "right"  },
     { label: "Proposed Rate",  align: "right"  },
     { label: "Letter",         align: "center" },
-    { label: "Notes",          align: "left"   },
   ];
 
   return (
@@ -481,6 +464,7 @@ function ApprovalCard({
                           ppBands={ppBands}
                           isExpanded={expandedEmpId === emp.id}
                           isEditing={editingEmpId === emp.id}
+                          canEdit={a.status === "pending"}
                           onToggleExpand={() => setExpandedEmpId((prev) => prev === emp.id ? null : emp.id)}
                           onStartEdit={() => setEditingEmpId(emp.id)}
                           onStopEdit={() => setEditingEmpId(null)}
@@ -495,7 +479,7 @@ function ApprovalCard({
                               <CompliancePanel
                                 emp={emp}
                                 compliance={row.compliance}
-                                locked={false}
+                                locked={a.status !== "pending"}
                                 onUpdate={handleEmpUpdated}
                               />
                             </td>
@@ -515,8 +499,8 @@ function ApprovalCard({
         </div>
       )}
 
-      {/* ── Decision panel ──────────────────────────────────────────────────── */}
-      <div className="px-5 py-4" style={{ borderTop: "1px solid var(--neutral-100)" }}>
+      {/* ── Decision panel — only for pending sites ──────────────────────── */}
+      {a.status === "pending" && <div className="px-5 py-4" style={{ borderTop: "1px solid var(--neutral-100)" }}>
         <div className="space-y-3">
           {!approvalReady && (
             <div className="rounded-lg px-4 py-3 space-y-1.5" style={{ background: "#fef2f2", border: "1px solid #fecaca" }}>
@@ -571,7 +555,16 @@ function ApprovalCard({
             </div>
           </div>
         </div>
-      </div>
+      </div>}
+
+      {/* Decided summary — show who decided and when */}
+      {a.status !== "pending" && (a.decided_by || a.decision_notes) && (
+        <div className="px-5 py-3 text-xs" style={{ borderTop: "1px solid var(--neutral-100)", color: "var(--neutral-500)" }}>
+          {a.decided_by && <span className="font-medium" style={{ color: "var(--neutral-700)" }}>{a.decided_by}</span>}
+          {a.decided_at && <span className="ml-1">{formatDate(a.decided_at)}</span>}
+          {a.decision_notes && <span className="ml-2 italic">— "{a.decision_notes}"</span>}
+        </div>
+      )}
     </div>
   );
 }
@@ -581,7 +574,7 @@ function ApprovalCard({
 // ─────────────────────────────────────────────────────────────────────────────
 function ApprovalEmpRow({
   emp, row, cpiRate, awardRates, ppBands,
-  isExpanded, isEditing,
+  isExpanded, isEditing, canEdit,
   onToggleExpand, onStartEdit, onStopEdit, onChange, onSave,
 }: {
   emp: EmployeeWithCompliance;
@@ -591,6 +584,7 @@ function ApprovalEmpRow({
   ppBands: PPBand[];
   isExpanded: boolean;
   isEditing: boolean;
+  canEdit: boolean;
   onToggleExpand: () => void;
   onStartEdit: () => void;
   onStopEdit: () => void;
@@ -616,20 +610,21 @@ function ApprovalEmpRow({
     <tr style={{ borderBottom: "1px solid var(--neutral-100)", background: rowBg, borderLeft: `3px solid ${rowAccent}` }}>
 
       {/* Actions — first column */}
-      <td className="px-2 py-3 text-center align-middle" style={{ minWidth: 60 }}>
+      <td className="px-2 py-3 text-center align-middle" style={{ minWidth: 72 }}>
         {isEditing ? (
           <button onClick={onStopEdit}
-            className="rounded-md px-2.5 py-1 text-[11px] font-semibold"
+            className="rounded-md px-3 py-1 text-[11px] font-semibold whitespace-nowrap"
             style={{ background: "#0f172a", color: "white" }}>
             Done
           </button>
-        ) : (
+        ) : canEdit ? (
           <button onClick={onStartEdit}
-            className="rounded-md px-2.5 py-1 text-[11px] font-semibold"
+            title="Edit"
+            className="rounded-md px-2 py-1 text-sm"
             style={{ background: "var(--neutral-100)", color: "var(--neutral-600)", border: "1px solid var(--neutral-200)" }}>
-            ✏ Edit
+            ✏
           </button>
-        )}
+        ) : null}
       </td>
 
       {/* Emp # */}
@@ -842,35 +837,9 @@ function ApprovalEmpRow({
         })()}
       </td>
 
-      {/* Letter */}
+      {/* Letter — auto-inferred, display only */}
       <td className="px-3 py-3 text-center align-middle" style={{ minWidth: 80 }}>
-        {isEditing ? (
-          <div className="flex flex-col items-center gap-1">
-            <Select
-              value={row.letter_type || NONE}
-              onValueChange={(v) => {
-                const val = v === NONE ? "" : v;
-                onChange("letter_type", val);
-                onSave({ letter_type: val || null });
-              }}
-            >
-              <SelectTrigger className="h-7 w-16 text-xs px-2 mx-auto"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value={NONE} className="text-xs italic" style={{ color: "var(--neutral-400)" }}>—</SelectItem>
-                {LETTER_TYPES.map((t) => <SelectItem key={t} value={t} className="text-xs">{t}</SelectItem>)}
-              </SelectContent>
-            </Select>
-            {row.letter_type && row.compliance.overall === "ok" && row.proposed_rate && (
-              <button
-                onClick={() => downloadDraftLetter(emp.id).catch((err) => alert(err instanceof Error ? err.message : String(err)))}
-                className="flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-semibold"
-                style={{ background: "#f0f9ff", border: "1px solid #bae6fd", color: "#0369a1" }}
-              >
-                📄 Draft
-              </button>
-            )}
-          </div>
-        ) : (
+        {(
           row.letter_type ? (
             <div className="flex flex-col items-center gap-1">
               <span className="inline-flex items-center justify-center rounded-md text-xs font-bold"
@@ -893,26 +862,6 @@ function ApprovalEmpRow({
         )}
       </td>
 
-      {/* Notes */}
-      <td className="px-3 py-3 align-middle" style={{ minWidth: 140 }}>
-        {isEditing ? (
-          <input
-            type="text"
-            value={row.notes}
-            onChange={(e) => onChange("notes", e.target.value)}
-            onBlur={(e) => onSave({ notes: e.target.value })}
-            placeholder="Add notes…"
-            className="w-full rounded border px-2 py-1 text-xs focus:outline-none"
-            style={{ borderColor: "var(--neutral-200)", color: "var(--neutral-700)", background: "white" }}
-          />
-        ) : (
-          row.notes ? (
-            <span className="text-[11px] leading-snug" style={{ color: "#475569" }}>{row.notes}</span>
-          ) : (
-            <span style={{ fontSize: 12, color: "var(--neutral-300)" }}>—</span>
-          )
-        )}
-      </td>
     </tr>
   );
 }

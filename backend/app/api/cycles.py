@@ -53,9 +53,10 @@ async def cycle_employees(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Cycle not found")
     employees = await cycle_service.get_cycle_employees(db, cycle_id)
 
-    # Regional managers see only their site
+    # Regional managers see only their site(s) — site field may be comma-separated
     if user.role == UserRole.REGIONAL_MANAGER.value and user.site:
-        employees = [e for e in employees if e.site.lower() == user.site.lower()]
+        allowed = {s.strip().lower() for s in user.site.split(",")}
+        employees = [e for e in employees if e.site.lower() in allowed]
 
     return [EmployeeResponse.model_validate(e) for e in employees]
 
