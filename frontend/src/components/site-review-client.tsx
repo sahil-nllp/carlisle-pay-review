@@ -689,7 +689,7 @@ export function SiteReviewClient({
           background: "white",
           border: "1px solid var(--border)",
           boxShadow: "0 1px 3px rgba(15,15,15,0.04)",
-          maxHeight: "calc(100vh - 260px)",
+          maxHeight: "calc(100vh - 200px)",
           overflowY: "auto",
         }}
       >
