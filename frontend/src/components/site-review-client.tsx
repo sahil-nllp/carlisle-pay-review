@@ -40,6 +40,11 @@ const CHANGE_TYPES = [
   "No Change",
 ];
 
+// Display label overrides — internal values stay unchanged (stored in DB)
+const CHANGE_TYPE_LABELS: Record<string, string> = {
+  "CPI Increase": "Award Increase",
+};
+
 // Whether the change type takes a % input, $ input, or no input
 function inputKind(ct: string): "percent" | "dollars" | "none" {
   const t = ct.toLowerCase();
@@ -119,6 +124,10 @@ export function SiteReviewClient({
       ),
   );
   const [expandedId, setExpandedId] = useState<number | null>(null);
+  type Filter = "belowAward" | "missingRate" | "unresolvedWarn" | "noLetter" | null;
+  const [activeFilter, setActiveFilter] = useState<Filter>(null);
+
+  const toggleFilter = (f: Filter) => setActiveFilter((prev) => prev === f ? null : f);
   // Track the latest save ID per employee — used to discard stale in-flight responses
   const saveSeqRef = React.useRef<Record<number, number>>({});
   const [isAssigningLetters, startAssigningLetters] = useTransition();
@@ -166,6 +175,24 @@ export function SiteReviewClient({
     () => employees.filter((e) => !e.is_departed),
     [employees],
   );
+  // Filtered list for the table based on the active badge filter
+  const filteredActive = useMemo(() => {
+    if (!activeFilter) return active;
+    return active.filter((emp) => {
+      const row = rows[emp.id];
+      if (!row) return false;
+      if (activeFilter === "belowAward")
+        return row.compliance.checks.some((c) => c.label === "Award floor" && c.status === "fail");
+      if (activeFilter === "missingRate")
+        return !row.proposed_rate;
+      if (activeFilter === "unresolvedWarn")
+        return row.compliance.overall === "warn";
+      if (activeFilter === "noLetter")
+        return !!row.proposed_rate && !row.letter_type;
+      return true;
+    });
+  }, [active, rows, activeFilter]);
+
   // Excluded employees are shown in the table but not counted in any stats
   const activeForStats = useMemo(
     () => active.filter((e) => !(rows[e.id]?.is_excluded)),
@@ -635,16 +662,20 @@ export function SiteReviewClient({
       {/* ── Summary badges ───────────────────────────────────────────────── */}
       <div className="flex flex-wrap gap-2">
         {tableSummary.belowAward > 0 && (
-          <SummaryBadge icon="✗" count={tableSummary.belowAward} label="below award minimum" bg="#fee2e2" color="#dc2626" border="#fecaca" />
+          <SummaryBadge icon="✗" count={tableSummary.belowAward} label="below award minimum" bg="#fee2e2" color="#dc2626" border="#fecaca"
+            active={activeFilter === "belowAward"} onClick={() => toggleFilter("belowAward")} />
         )}
         {tableSummary.missingRate > 0 && (
-          <SummaryBadge icon="—" count={tableSummary.missingRate} label="missing proposed rate" bg="#fff7ed" color="#c2410c" border="#fed7aa" />
+          <SummaryBadge icon="—" count={tableSummary.missingRate} label="missing proposed rate" bg="#fff7ed" color="#c2410c" border="#fed7aa"
+            active={activeFilter === "missingRate"} onClick={() => toggleFilter("missingRate")} />
         )}
         {tableSummary.unresolvedWarn > 0 && (
-          <SummaryBadge icon="⚠" count={tableSummary.unresolvedWarn} label="unresolved warnings" bg="#fffbeb" color="#b45309" border="#fde68a" />
+          <SummaryBadge icon="⚠" count={tableSummary.unresolvedWarn} label="unresolved warnings" bg="#fffbeb" color="#b45309" border="#fde68a"
+            active={activeFilter === "unresolvedWarn"} onClick={() => toggleFilter("unresolvedWarn")} />
         )}
         {tableSummary.noLetter > 0 && (
-          <SummaryBadge icon="✉" count={tableSummary.noLetter} label="no letter assigned" bg="#f8fafc" color="#475569" border="#cbd5e1" />
+          <SummaryBadge icon="✉" count={tableSummary.noLetter} label="no letter assigned" bg="#f8fafc" color="#475569" border="#cbd5e1"
+            active={activeFilter === "noLetter"} onClick={() => toggleFilter("noLetter")} />
         )}
         {tableSummary.belowAward === 0 && tableSummary.missingRate === 0 &&
          tableSummary.unresolvedWarn === 0 && (
@@ -668,7 +699,7 @@ export function SiteReviewClient({
             {/* ── Toolbar row — lives inside thead so it spans the full table width ── */}
             <tr>
               <th
-                colSpan={14}
+                colSpan={13}
                 style={{
                   position: "sticky",
                   top: 0,
@@ -680,11 +711,22 @@ export function SiteReviewClient({
               >
                 <div className="flex items-center justify-between px-4" style={{ height: 44 }}>
                   <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--neutral-400)" }}>
-                    {activeForStats.length} active employees
+                    {activeFilter
+                      ? `${filteredActive.length} of ${activeForStats.length} employees`
+                      : `${activeForStats.length} active employees`}
                     {active.length - activeForStats.length > 0 && (
                       <span style={{ color: "var(--neutral-300)", marginLeft: 6 }}>
                         · {active.length - activeForStats.length} excluded
                       </span>
+                    )}
+                    {activeFilter && (
+                      <button
+                        onClick={() => setActiveFilter(null)}
+                        className="ml-3 rounded px-1.5 py-0.5 text-[10px] font-semibold"
+                        style={{ background: "var(--neutral-100)", color: "var(--neutral-500)" }}
+                      >
+                        Clear filter ×
+                      </button>
                     )}
                   </span>
                   <div className="flex items-center gap-2">
@@ -727,12 +769,11 @@ export function SiteReviewClient({
               <Th align="right" >Input</Th>
               <Th align="right" >Proposed Rate</Th>
               <Th align="center">Letter</Th>
-              <Th align="left"  >Notes</Th>
               <Th align="center">Actions</Th>
             </tr>
           </thead>
           <tbody>
-            {active.map((emp) => {
+            {filteredActive.map((emp) => {
               const row = rows[emp.id];
               if (!row) return null;
               return (
@@ -767,7 +808,7 @@ export function SiteReviewClient({
                   {expandedId === emp.id && (
                     <tr key={`${emp.id}-panel`}>
                       <td
-                        colSpan={14}
+                        colSpan={13}
                         className="px-5 py-4"
                         style={{
                           borderBottom: "1px solid var(--neutral-100)",
@@ -1178,7 +1219,7 @@ function ReviewRow({
               — select —
             </SelectItem>
             {CHANGE_TYPES.map((t) => (
-              <SelectItem key={t} value={t} className="text-xs">{t}</SelectItem>
+              <SelectItem key={t} value={t} className="text-xs">{CHANGE_TYPE_LABELS[t] ?? t}</SelectItem>
             ))}
           </SelectContent>
         </Select>
@@ -1286,24 +1327,6 @@ function ReviewRow({
             📄 Draft
           </button>
         )}
-      </td>
-
-      {/* ── Notes ───────────────────────────────────────────────────────── */}
-      <td className={tdBase} style={{ minWidth: 160 }}>
-        <input
-          type="text"
-          value={row.notes}
-          onChange={(e) => onChange("notes", e.target.value)}
-          onBlur={(e) => onSave({ notes: e.target.value })}
-          placeholder="Add notes…"
-          disabled={effectiveLocked}
-          className="w-full rounded border px-2 py-1 text-xs focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
-          style={{
-            borderColor: "var(--neutral-200)",
-            color: "var(--neutral-700)",
-            background: "white",
-          }}
-        />
       </td>
 
       {/* ── Actions (Disable / Enable) ───────────────────────────────── */}
@@ -1614,10 +1637,10 @@ function CheckCard({
               value={reason}
               onChange={(e) => setReason(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === "Enter") handleSuppress();
+                if (e.key === "Enter" && reason.trim()) handleSuppress();
                 if (e.key === "Escape") { setShowReason(false); setReason(""); }
               }}
-              placeholder="Reason for noting (optional)"
+              placeholder="Reason for noting (required)"
               autoFocus
               className="w-full rounded-md border px-2.5 py-1.5 text-xs focus:outline-none"
               style={{ borderColor: "#cbd5e1", background: "white", color: "#374151" }}
@@ -1625,8 +1648,8 @@ function CheckCard({
             <div className="flex gap-2">
               <button
                 onClick={handleSuppress}
-                disabled={working}
-                className="rounded-md px-3 py-1.5 text-xs font-semibold disabled:opacity-50"
+                disabled={working || !reason.trim()}
+                className="rounded-md px-3 py-1.5 text-xs font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
                 style={{ background: "#0f172a", color: "white" }}
               >
                 {working ? "Saving…" : "Confirm"}
@@ -1727,20 +1750,31 @@ function ChevronIcon({ expanded }: { expanded: boolean }) {
 //  Summary badge
 // ─────────────────────────────────────────────────────────────────────────────
 function SummaryBadge({
-  icon, count, label, bg, color, border,
+  icon, count, label, bg, color, border, active: isActive, onClick,
 }: {
   icon: string; count: number; label: string;
   bg: string; color: string; border: string;
+  active?: boolean; onClick?: () => void;
 }) {
   return (
-    <div
-      className="inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-semibold"
-      style={{ background: bg, color, border: `1px solid ${border}` }}
+    <button
+      onClick={onClick}
+      className="inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all"
+      style={{
+        background: bg,
+        color,
+        border: `1px solid ${border}`,
+        cursor: onClick ? "pointer" : "default",
+        outline: isActive ? `2px solid ${color}` : "none",
+        outlineOffset: 1,
+        transform: isActive ? "scale(1.03)" : "scale(1)",
+      }}
     >
       <span className="text-[13px] leading-none">{icon}</span>
       <span className="tabular-nums font-bold">{count}</span>
       <span style={{ fontWeight: 500 }}>{label}</span>
-    </div>
+      {isActive && <span style={{ opacity: 0.6 }}>×</span>}
+    </button>
   );
 }
 

@@ -173,6 +173,36 @@ export default async function ReviewPage() {
                 );
               })}
             </tbody>
+            <tfoot>
+              <tr style={{ borderTop: "2px solid var(--neutral-200)" }}>
+                <td className="px-5 py-3 text-xs font-bold uppercase tracking-wide" style={{ color: "var(--neutral-500)" }}>
+                  Total
+                </td>
+                <td className="px-5 py-3 text-right tabular-nums text-sm font-bold" style={{ color: "var(--neutral-900)", fontFamily: "var(--font-mono)" }}>
+                  {totalStaff}
+                </td>
+                <td className="px-5 py-3 text-right tabular-nums text-sm font-bold" style={{ color: "var(--neutral-900)", fontFamily: "var(--font-mono)" }}>
+                  {formatCurrency(totalPayrollCurrent)}
+                </td>
+                <td className="px-5 py-3 text-right tabular-nums text-sm font-bold" style={{ color: "var(--neutral-900)", fontFamily: "var(--font-mono)" }}>
+                  {totalPayrollProposed > 0 ? formatCurrency(totalPayrollProposed) : <span style={{ color: "var(--neutral-300)" }}>—</span>}
+                </td>
+                <td className="px-5 py-3 text-right tabular-nums text-sm font-bold" style={{
+                  fontFamily: "var(--font-mono)",
+                  color: totalPayrollProposed > 0 ? (delta > 0 ? "var(--amber-700)" : "var(--green-700)") : "var(--neutral-300)",
+                }}>
+                  {totalPayrollProposed > 0 ? formatDelta(delta) : "—"}
+                </td>
+                <td className="px-5 py-3 text-center">
+                  {totalIssues > 0 && (
+                    <span className="rounded-full px-2.5 py-0.5 text-xs font-semibold" style={{ background: "var(--red-100)", color: "var(--red-700)" }}>
+                      {totalIssues}
+                    </span>
+                  )}
+                </td>
+                <td colSpan={2} />
+              </tr>
+            </tfoot>
           </table>
         </div>
       </div>

@@ -250,6 +250,20 @@ export default async function DashboardPage() {
                 </tr>
               ))}
             </tbody>
+            <tfoot>
+              <tr style={{ borderTop: "2px solid var(--neutral-200)" }}>
+                <td className="px-5 py-3 text-xs font-bold uppercase tracking-wide" style={{ color: "var(--neutral-500)" }}>
+                  Total
+                </td>
+                <td className="px-5 py-3 text-right tabular-nums text-sm font-bold" style={{ color: "var(--neutral-900)", fontFamily: "var(--font-mono)" }}>
+                  {siteSummaries.reduce((n, s) => n + s.staff, 0)}
+                </td>
+                <td className="px-5 py-3 text-right tabular-nums text-sm font-bold" style={{ color: "var(--neutral-900)", fontFamily: "var(--font-mono)" }}>
+                  {formatCurrency(siteSummaries.reduce((n, s) => n + s.payroll_current, 0))}
+                </td>
+                <td colSpan={2} />
+              </tr>
+            </tfoot>
           </table>
         </div>
       </div>

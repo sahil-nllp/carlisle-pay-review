@@ -372,24 +372,20 @@ function CompareView({
               className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400"
             />
           </Field>
-          <Field label="CPI %">
-            <div className="w-full rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-500 cursor-not-allowed">
-              {meta.cpi_rate}
-            </div>
+          <Field label="Award Increase (%)">
+            <input
+              type="number"
+              step="0.1"
+              value={meta.cpi_rate}
+              onChange={(e) => onMetaChange({ ...meta, cpi_rate: parseFloat(e.target.value) || 0 })}
+              className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400"
+            />
           </Field>
           <Field label="Effective Date">
             <input
               type="date"
               value={meta.effective_date}
               onChange={(e) => onMetaChange({ ...meta, effective_date: e.target.value })}
-              className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400"
-            />
-          </Field>
-          <Field label="Letter Date">
-            <input
-              type="date"
-              value={meta.letter_date}
-              onChange={(e) => onMetaChange({ ...meta, letter_date: e.target.value })}
               className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400"
             />
           </Field>

@@ -30,6 +30,7 @@ import {
 // ── Shared helpers ────────────────────────────────────────────────────────────
 const NONE = "__none__";
 const CHANGE_TYPES = ["CPI Increase", "% Increase", "Fixed Rate", "Per Admin PP", "No Change"];
+const CHANGE_TYPE_LABELS: Record<string, string> = { "CPI Increase": "Award Increase" };
 
 function inputKind(ct: string): "percent" | "dollars" | "none" {
   const t = ct.toLowerCase();
@@ -783,12 +784,12 @@ function ApprovalEmpRow({
             <SelectTrigger className="h-7 w-full text-xs px-2"><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value={NONE} className="text-xs italic" style={{ color: "var(--neutral-400)" }}>— select —</SelectItem>
-              {CHANGE_TYPES.map((t) => <SelectItem key={t} value={t} className="text-xs">{t}</SelectItem>)}
+              {CHANGE_TYPES.map((t) => <SelectItem key={t} value={t} className="text-xs">{CHANGE_TYPE_LABELS[t] ?? t}</SelectItem>)}
             </SelectContent>
           </Select>
         ) : (
           <span className="text-xs" style={{ color: row.change_type ? "#334155" : "#94a3b8" }}>
-            {row.change_type || "—"}
+            {row.change_type ? (CHANGE_TYPE_LABELS[row.change_type] ?? row.change_type) : "—"}
           </span>
         )}
       </td>
@@ -1044,13 +1045,13 @@ function CheckCard({
         {canSuppress && showReason && (
           <div className="space-y-1.5">
             <input type="text" value={reason} onChange={(e) => setReason(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter") handleSuppress(); if (e.key === "Escape") { setShowReason(false); setReason(""); } }}
-              placeholder="Reason for noting (optional)" autoFocus
+              onKeyDown={(e) => { if (e.key === "Enter" && reason.trim()) handleSuppress(); if (e.key === "Escape") { setShowReason(false); setReason(""); } }}
+              placeholder="Reason for noting (required)" autoFocus
               className="w-full rounded-md border px-2.5 py-1.5 text-xs focus:outline-none"
               style={{ borderColor: "#cbd5e1", background: "white", color: "#374151" }}
             />
             <div className="flex gap-2">
-              <button onClick={handleSuppress} disabled={working}
+              <button onClick={handleSuppress} disabled={working || !reason.trim()}
                 className="rounded-md px-3 py-1.5 text-xs font-semibold disabled:opacity-50"
                 style={{ background: "#0f172a", color: "white" }}>
                 {working ? "Saving…" : "Confirm"}

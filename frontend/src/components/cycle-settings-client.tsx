@@ -103,7 +103,7 @@ export function CycleSettingsClient({ cycle }: { cycle: CycleFields | null }) {
           {/* Rates */}
           <Section title="Rates">
             <div className="grid grid-cols-2 gap-4 md:grid-cols-3">
-              <Field label="CPI rate (%)">
+              <Field label="Award Increase (%)">
                 <input
                   type="number" step="0.01" min="0" max="100"
                   value={form.cpi_rate}

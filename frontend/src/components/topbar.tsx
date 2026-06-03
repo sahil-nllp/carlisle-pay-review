@@ -16,7 +16,7 @@ function getPageTitle(pathname: string): string {
   return match?.label ?? "Pay Review";
 }
 
-export function Topbar({ user }: { user: User }) {
+export function Topbar({ user, sidebarOpen, onToggleSidebar }: { user: User; sidebarOpen?: boolean; onToggleSidebar?: () => void }) {
   const router = useRouter();
   const pathname = usePathname();
   const [loggingOut, setLoggingOut] = useState(false);
@@ -42,6 +42,18 @@ export function Topbar({ user }: { user: User }) {
         borderBottom: "1px solid var(--border)",
       }}
     >
+      {/* Sidebar toggle */}
+      <button
+        onClick={onToggleSidebar}
+        className="mr-3 rounded-md p-1.5 transition-colors hover:bg-neutral-100"
+        style={{ color: "var(--neutral-500)" }}
+        title={sidebarOpen ? "Collapse sidebar" : "Expand sidebar"}
+      >
+        <svg width="16" height="16" viewBox="0 0 15 15" fill="none">
+          <path d="M1 3.5h13M1 7.5h13M1 11.5h13" stroke="currentColor" strokeWidth="1.25" strokeLinecap="round"/>
+        </svg>
+      </button>
+
       {/* Page title */}
       <h1
         className="text-base font-semibold tracking-tight"

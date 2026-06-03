@@ -79,7 +79,7 @@ export function Sidebar({ user }: { user: User }) {
 
   return (
     <aside
-      className="flex w-[240px] shrink-0 flex-col"
+      className="flex h-full w-[240px] shrink-0 flex-col"
       style={{
         background: "var(--sidebar)",
         borderRight: "1px solid var(--sidebar-border)",
