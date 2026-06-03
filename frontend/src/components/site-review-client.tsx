@@ -55,7 +55,8 @@ function inputKind(ct: string): "percent" | "dollars" | "none" {
 }
 
 function isCpiLocked(ct: string) {
-  return ct.toLowerCase() === "cpi increase";
+  const t = ct.toLowerCase();
+  return t === "cpi increase" || t === "per admin pp";
 }
 
 // ── Types ────────────────────────────────────────────────────────────────────

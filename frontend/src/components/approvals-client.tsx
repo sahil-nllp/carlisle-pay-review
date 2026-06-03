@@ -38,7 +38,10 @@ function inputKind(ct: string): "percent" | "dollars" | "none" {
   if (t === "fixed rate" || t === "per admin pp") return "dollars";
   return "none";
 }
-function isCpiLocked(ct: string) { return ct.toLowerCase() === "cpi increase"; }
+function isCpiLocked(ct: string) {
+  const t = ct.toLowerCase();
+  return t === "cpi increase" || t === "per admin pp";
+}
 function formatCurrency(v: number) {
   return new Intl.NumberFormat("en-AU", { style: "currency", currency: "AUD", maximumFractionDigits: 0 }).format(v);
 }
