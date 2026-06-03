@@ -644,9 +644,11 @@ function ApprovalEmpRow({
         </div>
       </td>
 
-      {/* Age */}
+      {/* Age — only shown for employees 21 or under */}
       <td className="px-3 py-3 text-center align-middle text-xs" style={{ color: "var(--neutral-600)" }}>
-        {emp.age ?? <span style={{ color: "var(--neutral-300)" }}>—</span>}
+        {emp.age != null && emp.age <= 21
+          ? emp.age
+          : <span style={{ color: "var(--neutral-300)" }}>—</span>}
       </td>
 
       {/* Status */}
@@ -927,7 +929,9 @@ function CompliancePanel({
   onUpdate: (updated: EmployeeWithCompliance) => void;
 }) {
   const ORDER: Record<string, number> = { fail: 0, warn: 1, suppressed: 2, ok: 3 };
-  const sorted = [...compliance.checks].sort((a, b) => (ORDER[a.status] ?? 9) - (ORDER[b.status] ?? 9));
+  const sorted = [...compliance.checks]
+    .filter((c) => !(c.label === "Age check" && c.status === "ok"))
+    .sort((a, b) => (ORDER[a.status] ?? 9) - (ORDER[b.status] ?? 9));
   return (
     <div>
       <div className="mb-3 flex flex-wrap items-center gap-4">

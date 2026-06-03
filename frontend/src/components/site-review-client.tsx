@@ -1044,9 +1044,11 @@ function ReviewRow({
         )}
       </td>
 
-      {/* ── Age ────────────────────────────────────────────────────────── */}
+      {/* ── Age — only shown for employees 21 or under (junior rate check) */}
       <td className={`${tdBase} text-center`} style={{ color: "var(--neutral-600)" }}>
-        {emp.age ?? <span style={{ color: "var(--neutral-300)" }}>—</span>}
+        {emp.age != null && emp.age <= 21
+          ? emp.age
+          : <span style={{ color: "var(--neutral-300)" }}>—</span>}
       </td>
 
       {/* ── Status (compliance badge — early so reviewer can scan fast) ── */}
@@ -1415,9 +1417,9 @@ function CompliancePanel({
 }) {
   // Sort: fail → warn → suppressed → ok
   const ORDER: Record<string, number> = { fail: 0, warn: 1, suppressed: 2, ok: 3 };
-  const sorted = [...compliance.checks].sort(
-    (a, b) => (ORDER[a.status] ?? 9) - (ORDER[b.status] ?? 9),
-  );
+  const sorted = [...compliance.checks]
+    .filter((c) => !(c.label === "Age check" && c.status === "ok"))
+    .sort((a, b) => (ORDER[a.status] ?? 9) - (ORDER[b.status] ?? 9));
 
   return (
     <div>
