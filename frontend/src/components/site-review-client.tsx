@@ -42,6 +42,7 @@ const CHANGE_TYPES = [
 // Display label overrides — internal values stay unchanged (stored in DB)
 const CHANGE_TYPE_LABELS: Record<string, string> = {
   "CPI Increase": "Award Increase",
+  "Per Admin PP": "Per PP",
 };
 
 // Whether the change type takes a % input, $ input, or no input
@@ -218,7 +219,11 @@ export function SiteReviewClient({
         missingRate++;
       if (row.compliance.overall === "warn")
         unresolvedWarn++;
-      if (row.proposed_rate && !row.letter_type)
+      // Only count as missing letter if there's an actual change (not "No Change")
+      const hasChange =
+        (row.change_type && row.change_type.toLowerCase() !== "no change") ||
+        (row.letter_type != null && ["A", "B", "C"].includes(row.letter_type));
+      if (hasChange && !row.letter_type)
         noLetter++;
       if (
         row.letter_type && ["A", "B", "C"].includes(row.letter_type) &&
@@ -1032,7 +1037,7 @@ function ReviewRow({
         </div>
         {isExcluded && (
           <span className="mt-0.5 inline-block text-[10px] font-semibold uppercase tracking-wide" style={{ color: "#94a3b8" }}>
-            Disabled
+            Excluded
           </span>
         )}
       </td>
@@ -1147,6 +1152,17 @@ function ReviewRow({
         {hasAwardChange && (
           <div style={{ fontSize: 10, color: "#065f46", marginTop: 3 }}>
             ↑ from {emp.current_award ?? "—"}
+          </div>
+        )}
+
+        {/* Junior rate calculation for under-21 SS employees */}
+        {row.compliance.junior_minimum != null && row.compliance.award_minimum != null && (
+          <div
+            className="mt-2 rounded-md px-2 py-1.5 text-[10px]"
+            style={{ background: "#fffbeb", border: "1px solid #fde68a", color: "#92400e" }}
+          >
+            <span className="font-semibold">Junior rate:</span>{" "}
+            {row.compliance.junior_pct}% of {formatRate(row.compliance.award_minimum)} = <span className="font-bold">{formatRate(row.compliance.junior_minimum)}</span> min
           </div>
         )}
 
@@ -1327,7 +1343,7 @@ function ReviewRow({
         )}
       </td>
 
-      {/* ── Actions (Disable / Enable) — hidden when site is locked ───── */}
+      {/* ── Actions (Exclude / Include) — hidden when site is locked ───── */}
       {!locked && <td className={`${tdBase} text-center`} style={{ minWidth: 90 }}>
         {(
           <>
@@ -1337,7 +1353,7 @@ function ReviewRow({
                 className="rounded-md px-2.5 py-1 text-[11px] font-semibold transition-colors"
                 style={{ background: "#dcfce7", color: "#16a34a", border: "1px solid #bbf7d0" }}
               >
-                Enable
+                Include
               </button>
             ) : (
               <button
@@ -1345,7 +1361,7 @@ function ReviewRow({
                 className="rounded-md px-2.5 py-1 text-[11px] font-semibold transition-colors hover:opacity-80"
                 style={{ background: "#fee2e2", color: "#dc2626", border: "1px solid #fecaca" }}
               >
-                Disable
+                Exclude
               </button>
             )}
           </>
@@ -1364,12 +1380,12 @@ function ReviewRow({
               onClick={(e) => e.stopPropagation()}
             >
               <div className="mb-1 text-sm font-bold" style={{ color: "#0f172a" }}>
-                Disable employee?
+                Exclude employee?
               </div>
               <p className="mb-5 text-xs leading-relaxed" style={{ color: "#64748b" }}>
                 <strong style={{ color: "#0f172a" }}>{emp.first_name} {emp.last_name}</strong> will
                 be grayed out and excluded from all compliance checks, payroll totals,
-                and the submission. You can re-enable them at any time.
+                and the submission. You can re-include them at any time.
               </p>
               <div className="flex gap-2">
                 <button
@@ -1377,7 +1393,7 @@ function ReviewRow({
                   className="flex-1 rounded-lg py-2 text-xs font-semibold"
                   style={{ background: "#dc2626", color: "white" }}
                 >
-                  Yes, disable
+                  Yes, exclude
                 </button>
                 <button
                   onClick={() => setShowConfirm(false)}

@@ -180,6 +180,8 @@ def _compliance(
         ],
         overall=result.overall,
         award_minimum=result.award_minimum,
+        junior_minimum=result.junior_minimum,
+        junior_pct=result.junior_pct,
         next_level=result.next_level,
         band_min=result.band_min,
         band_max=result.band_max,

@@ -34,7 +34,7 @@ export const NAV_ITEMS: NavItem[] = [
     label: "Downloads",
     href: "/downloads",
     group: "main",
-    roles: ["hr_admin", "payroll"],
+    roles: ["hr_admin", "senior_management", "payroll"],
   },
 
   // Admin section

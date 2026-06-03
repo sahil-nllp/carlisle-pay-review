@@ -54,6 +54,8 @@ class EmployeeCompliance(BaseModel):
     checks: list[CheckResult] = Field(default_factory=list)
     overall: Literal["ok", "warn", "fail"] = "ok"
     award_minimum: float | None = None
+    junior_minimum: float | None = None   # effective minimum for under-21 SS employees
+    junior_pct: int | None = None         # e.g. 80 (percent of adult rate)
     next_level: str | None = None      # suggested reclassification target
     band_min: float | None = None
     band_max: float | None = None

@@ -28,6 +28,18 @@ def _safe(text: str) -> str:
     return re.sub(r'[\\/*?:"<>|]', "_", str(text or "unknown")).strip()
 
 
+_CHANGE_TYPE_LABELS: dict[str, str] = {
+    "CPI Increase": "Award Increase",
+    "Per Admin PP": "Per PP",
+}
+
+def _ct_label(change_type: str | None) -> str:
+    """Return the display label for a change type."""
+    if not change_type:
+        return ""
+    return _CHANGE_TYPE_LABELS.get(change_type, change_type)
+
+
 def _fmt_rate(val: float | None) -> str:
     try:
         return f"${float(val):.2f}"
@@ -639,7 +651,7 @@ def generate_regional_excel(
             pr if pr else None,
             delta,
             pct,
-            emp.change_type or "",
+            _ct_label(emp.change_type),
             emp.letter_type or "",
             emp.notes or "",
         ]

@@ -40,6 +40,8 @@ export interface EmployeeCompliance {
   checks: CheckResult[];
   overall: "ok" | "warn" | "fail";
   award_minimum: number | null;
+  junior_minimum: number | null;
+  junior_pct: number | null;
   next_level: string | null;
   band_min: number | null;
   band_max: number | null;

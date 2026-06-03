@@ -164,6 +164,8 @@ class ComplianceResult:
     checks: list[CheckResult] = field(default_factory=list)
 
     award_minimum: float | None = None
+    junior_minimum: float | None = None
+    junior_pct: int | None = None
     next_level: str | None = None
     band_min: float | None = None
     band_max: float | None = None
@@ -390,6 +392,8 @@ def check_employee(
             pct = context.junior_rates.get(min(age, 20), 0.40)
             adult_min = floor or 0.0
             jmin = round(adult_min * pct, 2)
+            result.junior_minimum = jmin
+            result.junior_pct = int(pct * 100)
             if pr >= jmin:
                 result.checks.append(CheckResult(
                     "ok", "Junior rate",

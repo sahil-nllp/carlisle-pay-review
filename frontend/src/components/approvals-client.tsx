@@ -30,7 +30,7 @@ import {
 // ── Shared helpers ────────────────────────────────────────────────────────────
 const NONE = "__none__";
 const CHANGE_TYPES = ["CPI Increase", "% Increase", "Fixed Rate", "Per Admin PP", "No Change"];
-const CHANGE_TYPE_LABELS: Record<string, string> = { "CPI Increase": "Award Increase" };
+const CHANGE_TYPE_LABELS: Record<string, string> = { "CPI Increase": "Award Increase", "Per Admin PP": "Per PP" };
 
 function inputKind(ct: string): "percent" | "dollars" | "none" {
   const t = ct.toLowerCase();
@@ -59,6 +59,7 @@ interface EmpRowState {
   proposed_award: string | null;
   pp_level: string | null;
   notes: string;
+  is_excluded: boolean;
   compliance: EmployeeWithCompliance["compliance"];
   saveState: "idle" | "saving" | "saved" | "error";
   error: string | null;
@@ -73,6 +74,7 @@ function initEmpRow(e: EmployeeWithCompliance, cpiRate: number): EmpRowState {
     proposed_award: e.proposed_award ?? null,
     pp_level:       e.pp_level      ?? null,
     notes:          e.notes         ?? "",
+    is_excluded:    e.is_excluded   ?? false,
     compliance:     e.compliance,
     saveState: "idle",
     error: null,
@@ -87,6 +89,7 @@ type EmpRowPatch = Partial<{
   pp_level: string | null;
   letter_type: string | null;
   notes: string;
+  is_excluded: boolean;
 }>;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -236,7 +239,7 @@ function ApprovalCard({
           getAwardRates(cycleId),
           getPPBands(cycleId),
         ]);
-        const active = data.filter((e) => !e.is_departed && !e.is_excluded);
+        const active = data.filter((e) => !e.is_departed);
         setEmployees(active);
         setRows(Object.fromEntries(active.map((e) => [e.id, initEmpRow(e, cpiRate)])));
         setAwardRates(rates);
@@ -263,6 +266,7 @@ function ApprovalCard({
         proposed_award: updated.proposed_award ?? null,
         pp_level:       updated.pp_level      ?? null,
         notes:          updated.notes         ?? "",
+        is_excluded:    updated.is_excluded   ?? false,
         compliance:     updated.compliance,
       },
     }));
@@ -292,6 +296,7 @@ function ApprovalCard({
           ...ppLevelPatch,
           ...letterTypePatch,
           notes: (patch.notes ?? row?.notes) || null,
+          ...("is_excluded" in patch ? { is_excluded: patch.is_excluded as boolean } : {}),
         });
 
         if (saveSeqRef.current[emp.id] !== seq) return;
@@ -332,6 +337,20 @@ function ApprovalCard({
     liveFailCount = a.hard_issues;
     liveWarnCount = a.warn_count;
   }
+
+  // ── Live payroll stats (update when employees are excluded/included) ─────────
+  const liveStats = React.useMemo(() => {
+    if (!employees) return null;
+    const active = employees.filter((e) => !(rows[e.id]?.is_excluded));
+    let payrollCurrent  = 0;
+    let payrollProposed = 0;
+    for (const emp of active) {
+      const hours = emp.hours_per_week ?? 0;
+      payrollCurrent  += (emp.current_rate  ?? 0) * hours * 52;
+      payrollProposed += (rows[emp.id]?.proposed_rate ?? emp.proposed_rate ?? 0) * hours * 52;
+    }
+    return { staff: active.length, payrollCurrent, payrollProposed };
+  }, [employees, rows]);
 
   // ── Approval readiness gate ────────────────────────────────────────────────
   const approvalBlockers: string[] = [];
@@ -400,12 +419,20 @@ function ApprovalCard({
         <StatusBadge status={a.status} />
       </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-3 gap-px" style={{ background: "var(--neutral-100)", borderTop: "1px solid var(--neutral-100)" }}>
-        <StatCell label="Staff" value={String(a.staff)} />
-        <StatCell label="Current payroll" value={formatCurrency(a.payroll_current)} />
-        <StatCell label="Proposed payroll" value={`${formatCurrency(a.payroll_proposed)} (${payrollDelta >= 0 ? "+" : ""}${formatCurrency(payrollDelta)})`} positive={payrollDelta > 0} />
-      </div>
+      {/* Stats — use live computed values when employees are loaded */}
+      {(() => {
+        const staff    = liveStats?.staff           ?? a.staff;
+        const current  = liveStats?.payrollCurrent  ?? a.payroll_current;
+        const proposed = liveStats?.payrollProposed ?? a.payroll_proposed;
+        const delta    = proposed - current;
+        return (
+          <div className="grid grid-cols-3 gap-px" style={{ background: "var(--neutral-100)", borderTop: "1px solid var(--neutral-100)" }}>
+            <StatCell label="Staff" value={String(staff)} />
+            <StatCell label="Current payroll" value={formatCurrency(current)} />
+            <StatCell label="Proposed payroll" value={`${formatCurrency(proposed)} (${delta >= 0 ? "+" : ""}${formatCurrency(delta)})`} positive={delta > 0} />
+          </div>
+        );
+      })()}
 
       {a.submission_notes && (
         <div className="px-5 py-3 text-xs" style={{ borderTop: "1px solid var(--neutral-100)", color: "var(--neutral-600)" }}>
@@ -470,6 +497,11 @@ function ApprovalCard({
                           onStopEdit={() => setEditingEmpId(null)}
                           onChange={(field, value) => setRows((prev) => ({ ...prev, [emp.id]: { ...prev[emp.id], [field]: value } }))}
                           onSave={(patch) => saveRow(emp, patch)}
+                          onToggleExclude={() => {
+                            const next = !row.is_excluded;
+                            setRows((prev) => ({ ...prev, [emp.id]: { ...prev[emp.id], is_excluded: next } }));
+                            saveRow(emp, { is_excluded: next });
+                          }}
                         />
                         {expandedEmpId === emp.id && (
                           <tr>
@@ -575,7 +607,7 @@ function ApprovalCard({
 function ApprovalEmpRow({
   emp, row, cpiRate, awardRates, ppBands,
   isExpanded, isEditing, canEdit,
-  onToggleExpand, onStartEdit, onStopEdit, onChange, onSave,
+  onToggleExpand, onStartEdit, onStopEdit, onChange, onSave, onToggleExclude,
 }: {
   emp: EmployeeWithCompliance;
   row: EmpRowState;
@@ -590,6 +622,7 @@ function ApprovalEmpRow({
   onStopEdit: () => void;
   onChange: (field: keyof EmpRowState, value: string) => void;
   onSave: (patch: EmpRowPatch) => void;
+  onToggleExclude: () => void;
 }) {
   const overall        = row.compliance.overall;
   const hasAwardChange = Boolean(row.proposed_award && row.proposed_award !== emp.current_award);
@@ -600,31 +633,90 @@ function ApprovalEmpRow({
   const cpiLocked      = isCpiLocked(row.change_type);
   const mono           = { fontFamily: "var(--font-mono)" };
 
-  const rowBg     = overall === "fail" ? "var(--red-50)" : overall === "warn" ? "#fffbeb" : isEditing ? "#f8fafc" : "white";
-  const rowAccent = overall === "fail" ? "var(--red-500)" : overall === "warn" ? "var(--amber-400)" : isEditing ? "#c7d2fe" : "transparent";
+  const [showConfirm, setShowConfirm] = React.useState(false);
+  const isExcluded = row.is_excluded;
+  const rowBg     = isExcluded ? "var(--neutral-50)" : overall === "fail" ? "var(--red-50)" : overall === "warn" ? "#fffbeb" : isEditing ? "#f8fafc" : "white";
+  const rowAccent = isExcluded ? "var(--neutral-300)" : overall === "fail" ? "var(--red-500)" : overall === "warn" ? "var(--amber-400)" : isEditing ? "#c7d2fe" : "transparent";
   const tdV = "px-3 py-3 align-top";
   const tdE = "px-3 py-4 align-top";
   const td  = isEditing ? tdE : tdV;
 
   return (
-    <tr style={{ borderBottom: "1px solid var(--neutral-100)", background: rowBg, borderLeft: `3px solid ${rowAccent}` }}>
+    <tr style={{ borderBottom: "1px solid var(--neutral-100)", background: rowBg, borderLeft: `3px solid ${rowAccent}`, opacity: isExcluded ? 0.55 : 1 }}>
 
       {/* Actions — first column */}
-      <td className="px-2 py-3 text-center align-middle" style={{ minWidth: 72 }}>
-        {isEditing ? (
-          <button onClick={onStopEdit}
-            className="rounded-md px-3 py-1 text-[11px] font-semibold whitespace-nowrap"
-            style={{ background: "#0f172a", color: "white" }}>
-            Done
-          </button>
-        ) : canEdit ? (
-          <button onClick={onStartEdit}
-            title="Edit"
-            className="rounded-md px-2 py-1 text-sm"
-            style={{ background: "var(--neutral-100)", color: "var(--neutral-600)", border: "1px solid var(--neutral-200)" }}>
-            ✏
-          </button>
-        ) : null}
+      <td className="px-2 py-3 text-center align-middle" style={{ minWidth: 100 }}>
+        <div className="flex items-center justify-center gap-1">
+          {isEditing ? (
+            <button onClick={onStopEdit}
+              className="rounded-md px-3 py-1 text-[11px] font-semibold whitespace-nowrap"
+              style={{ background: "#0f172a", color: "white" }}>
+              Done
+            </button>
+          ) : canEdit ? (
+            <button onClick={onStartEdit}
+              title="Edit"
+              className="rounded-md px-2 py-1 text-sm"
+              style={{ background: "var(--neutral-100)", color: "var(--neutral-600)", border: "1px solid var(--neutral-200)" }}>
+              ✏
+            </button>
+          ) : null}
+          {canEdit && (
+            isExcluded ? (
+              <button onClick={onToggleExclude}
+                className="rounded-md px-2.5 py-1 text-[11px] font-semibold whitespace-nowrap"
+                style={{ background: "#dcfce7", color: "#16a34a", border: "1px solid #bbf7d0" }}>
+                Include
+              </button>
+            ) : (
+              <button onClick={() => setShowConfirm(true)}
+                className="rounded-md px-2.5 py-1 text-[11px] font-semibold whitespace-nowrap hover:opacity-80"
+                style={{ background: "#fee2e2", color: "#dc2626", border: "1px solid #fecaca" }}>
+                Exclude
+              </button>
+            )
+          )}
+
+          {/* Confirmation dialog */}
+          {showConfirm && (
+            <div
+              className="fixed inset-0 z-50 flex items-center justify-center"
+              style={{ background: "rgba(0,0,0,0.4)" }}
+              onClick={() => setShowConfirm(false)}
+            >
+              <div
+                className="w-80 rounded-xl p-6 shadow-xl"
+                style={{ background: "white", border: "1px solid var(--border)" }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="mb-1 text-sm font-bold" style={{ color: "#0f172a" }}>
+                  Exclude employee?
+                </div>
+                <p className="mb-5 text-xs leading-relaxed" style={{ color: "#64748b" }}>
+                  <strong style={{ color: "#0f172a" }}>{emp.first_name} {emp.last_name}</strong> will
+                  be grayed out and excluded from all compliance checks, payroll totals,
+                  and the submission. You can re-include them at any time.
+                </p>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => { setShowConfirm(false); onToggleExclude(); }}
+                    className="flex-1 rounded-lg py-2 text-xs font-semibold"
+                    style={{ background: "#dc2626", color: "white" }}
+                  >
+                    Yes, exclude
+                  </button>
+                  <button
+                    onClick={() => setShowConfirm(false)}
+                    className="flex-1 rounded-lg py-2 text-xs font-semibold"
+                    style={{ background: "#f1f5f9", color: "#475569", border: "1px solid #e2e8f0" }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
       </td>
 
       {/* Emp # */}
