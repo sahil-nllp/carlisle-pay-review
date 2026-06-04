@@ -34,6 +34,7 @@ class CycleResponse(BaseModel):
     signatory_title: str | None
     signatory_company: str | None
     hr_email: str | None
+    has_signature: bool = False   # True when a signature image is stored
     status: str
     reference_data_ready: bool = False
     created_at: datetime

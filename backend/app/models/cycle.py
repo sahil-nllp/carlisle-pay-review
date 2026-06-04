@@ -36,6 +36,9 @@ class ReviewCycle(Base, TimestampMixin):
     super_old: Mapped[str | None] = mapped_column(String(10), nullable=True)
     super_new: Mapped[str | None] = mapped_column(String(10), nullable=True)
 
+    # Signature image (uploaded PNG/JPG, embedded in letters)
+    signature_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
     # Letter signoff
     signatory_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
     signatory_title: Mapped[str | None] = mapped_column(String(160), nullable=True)

@@ -262,18 +262,18 @@ def _build_letter_pdf(
     award_level   = emp.current_award or ""
 
     pdf = FPDF(orientation="P", unit="mm", format="A4")
-    pdf.set_auto_page_break(auto=True, margin=25)
+    pdf.set_auto_page_break(auto=True, margin=18)
     pdf.add_page()
-    pdf.set_margins(left=28, top=25, right=28)
+    pdf.set_margins(left=28, top=20, right=28)
 
     BRAND = (211, 46, 83)   # Carlisle brand red #d32e53
     DARK  = (30, 30, 30)
     GREY  = (100, 100, 100)
 
-    def para(text: str, bold: bool = False, colour=DARK, size: int = 11, gap_after: float = 4):
+    def para(text: str, bold: bool = False, colour=DARK, size: int = 11, gap_after: float = 3):
         pdf.set_font("Helvetica", style="B" if bold else "", size=size)
         pdf.set_text_color(*colour)
-        pdf.multi_cell(0, 5.5, text, align="L")
+        pdf.multi_cell(0, 5.2, text, align="L")
         if gap_after:
             pdf.ln(gap_after)
 
@@ -306,8 +306,8 @@ def _build_letter_pdf(
 
     # Date + salutation
     para(letter_date, colour=GREY, size=10, gap_after=1)
-    para("Via Email Correspondence", colour=GREY, size=10, gap_after=5)
-    para(f"Dear {first_name}", size=11, gap_after=5)
+    para("Via Email Correspondence", colour=GREY, size=10, gap_after=3)
+    para(f"Dear {first_name}", size=11, gap_after=3)
 
     # Subject line
     subjects = {
@@ -315,7 +315,7 @@ def _build_letter_pdf(
         "B": "Re: Increase in your Remuneration & Change to your Award Level",
         "C": "Re: Realignment of your Award level",
     }
-    para(subjects[letter_type], bold=True, colour=BRAND, size=11, gap_after=5)
+    para(subjects[letter_type], bold=True, colour=BRAND, size=11, gap_after=4)
 
     # Body paragraphs — same wording as the docx builder
     if letter_type == "A":
@@ -368,7 +368,7 @@ def _build_letter_pdf(
         )
         para("If you do not have any feedback, your Award level will be updated to the above.")
 
-    gap(4)
+    gap(2)
 
     # Super paragraph (common to all)
     para(
@@ -388,9 +388,26 @@ def _build_letter_pdf(
         f"On behalf of the Carlisle Health Management Team and Board, we would like to thank you "
         f"for your ongoing contribution."
     )
-    gap(6)
+    gap(3)
     para("Yours Sincerely")
-    gap(14)
+    gap(2)
+
+    # Embed signature image if available
+    sig_path = getattr(cycle, "signature_path", None)
+    if sig_path:
+        from pathlib import Path as _Path
+        p = _Path(sig_path)
+        if p.exists():
+            try:
+                pdf.image(str(p), x=pdf.get_x(), y=pdf.get_y(), h=16)
+                pdf.ln(17)
+            except Exception:
+                pdf.ln(14)
+        else:
+            pdf.ln(14)
+    else:
+        pdf.ln(14)
+
     para(signatory_name, bold=True, gap_after=1)
     if signatory_title:
         para(signatory_title, colour=GREY, size=10, gap_after=1)

@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 
 import { ApiError } from "@/lib/api";
 import { clearAllData, updateCycleSettings, type ClearDataResult } from "@/lib/admin";
@@ -13,17 +13,49 @@ interface CycleFields {
   letter_date: string;
   consultation_deadline: string | null;
   cpi_rate: number;
-  super_old: number | null;
-  super_new: number | null;
+  super_old: string | null;
+  super_new: string | null;
   signatory_name: string | null;
   signatory_title: string | null;
   signatory_company: string | null;
   hr_email: string | null;
+  has_signature: boolean;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 export function CycleSettingsClient({ cycle }: { cycle: CycleFields | null }) {
   const router = useRouter();
+  const [hasSignature, setHasSignature] = useState(cycle?.has_signature ?? false);
+  const [sigUploading, setSigUploading] = useState(false);
+  const [sigError, setSigError] = useState<string | null>(null);
+  const sigInputRef = useRef<HTMLInputElement>(null);
+  const sigCacheBust = useRef(Date.now());
+
+  async function handleSignatureUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file || !cycle) return;
+    setSigUploading(true);
+    setSigError(null);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch(`/api/v1/cycles/${cycle.id}/signature`, { method: "POST", body: fd });
+      if (!res.ok) throw new Error(await res.text());
+      sigCacheBust.current = Date.now();
+      setHasSignature(true);
+    } catch (err) {
+      setSigError(err instanceof Error ? err.message : "Upload failed");
+    } finally {
+      setSigUploading(false);
+      if (sigInputRef.current) sigInputRef.current.value = "";
+    }
+  }
+
+  async function handleSignatureDelete() {
+    if (!cycle) return;
+    const res = await fetch(`/api/v1/cycles/${cycle.id}/signature`, { method: "DELETE" });
+    if (res.ok) setHasSignature(false);
+  }
 
   const [form, setForm] = useState({
     letter_date: cycle?.letter_date ?? "",
@@ -149,6 +181,61 @@ export function CycleSettingsClient({ cycle }: { cycle: CycleFields | null }) {
                 <input type="email" value={form.hr_email} onChange={(e) => set("hr_email", e.target.value)} className={INPUT} placeholder="hr@carlislehealth.com.au" />
                 <p className="mt-1 text-xs" style={{ color: "var(--neutral-400)" }}>Shown in letters for employee queries</p>
               </Field>
+            </div>
+          </Section>
+
+          {/* Signature */}
+          <Section title="Letter signature">
+            <p className="mb-4 text-xs" style={{ color: "var(--neutral-500)" }}>
+              Upload a PNG or JPG of the signatory's signature. It will be embedded above the signatory name in all generated letters.
+            </p>
+            <div className="flex items-start gap-6">
+              {hasSignature && cycle && (
+                <div
+                  className="flex items-center justify-center rounded-lg p-3"
+                  style={{ background: "var(--neutral-50)", border: "1px solid var(--neutral-200)", minWidth: 160, minHeight: 80 }}
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={`/api/v1/cycles/${cycle.id}/signature?t=${sigCacheBust.current}`}
+                    alt="Signature"
+                    style={{ maxHeight: 64, maxWidth: 200, objectFit: "contain" }}
+                  />
+                </div>
+              )}
+              <div className="space-y-2">
+                <input
+                  ref={sigInputRef}
+                  type="file"
+                  accept="image/png,image/jpeg"
+                  onChange={handleSignatureUpload}
+                  className="sr-only"
+                  id="sig-upload"
+                />
+                <div className="flex gap-2">
+                  <label
+                    htmlFor="sig-upload"
+                    className="cursor-pointer rounded-lg px-4 py-2 text-sm font-semibold"
+                    style={{ background: "var(--neutral-900)", color: "white", opacity: sigUploading ? 0.6 : 1 }}
+                  >
+                    {sigUploading ? "Uploading…" : hasSignature ? "Replace signature" : "Upload signature"}
+                  </label>
+                  {hasSignature && (
+                    <button
+                      type="button"
+                      onClick={handleSignatureDelete}
+                      className="rounded-lg px-4 py-2 text-sm font-semibold"
+                      style={{ background: "var(--red-50)", color: "var(--red-600)", border: "1px solid var(--red-100)" }}
+                    >
+                      Remove
+                    </button>
+                  )}
+                </div>
+                {sigError && <p className="text-xs" style={{ color: "var(--red-600)" }}>{sigError}</p>}
+                {!hasSignature && (
+                  <p className="text-xs" style={{ color: "var(--neutral-400)" }}>No signature uploaded yet</p>
+                )}
+              </div>
             </div>
           </Section>
 
