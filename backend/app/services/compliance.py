@@ -335,20 +335,31 @@ def check_employee(
         if highest:
             result.next_level = highest
 
+    # ── Junior multiplier (needed for PP band checks below) ──────────────────
+    _is_ss = ca_canonical is not None and "SS" in (ca_canonical or "").split()
+    _junior_pct: float | None = None
+    if age is not None and age < 21 and _is_ss:
+        _junior_pct = context.junior_rates.get(min(age, 20), 0.40)
+
+    # Effective band bounds — apply junior multiplier if applicable
+    _eff_band_min = round(result.band_min * _junior_pct, 2) if result.band_min is not None and _junior_pct else result.band_min
+    _eff_band_max = round(result.band_max * _junior_pct, 2) if result.band_max is not None and _junior_pct else result.band_max
+    _junior_suffix = f" ({int(_junior_pct * 100)}% junior rate)" if _junior_pct else ""
+
     # ── Check 3a: PP band minimum ────────────────────────────────────────────
-    if result.band_min is not None and pr > 0:
-        if pr < result.band_min:
-            gap = round(result.band_min - pr, 2)
+    if _eff_band_min is not None and pr > 0:
+        if pr < _eff_band_min:
+            gap = round(_eff_band_min - pr, 2)
             result.checks.append(CheckResult(
                 "warn", "PP band minimum",
-                f"${pr:.2f} < band min ${result.band_min:.2f} ({pp_level}) — below Carlisle band floor by ${gap:.2f}",
-                f"Raise proposed rate to at least ${result.band_min:.2f} to meet this role's Carlisle band minimum",
+                f"${pr:.2f} < band min ${_eff_band_min:.2f} ({pp_level}){_junior_suffix} — below Carlisle band floor by ${gap:.2f}",
+                f"Raise proposed rate to at least ${_eff_band_min:.2f} to meet this role's Carlisle band minimum",
             ))
             result.overall = _worst(result.overall, "warn")
         else:
             result.checks.append(CheckResult(
                 "ok", "PP band minimum",
-                f"${pr:.2f} ≥ band min ${result.band_min:.2f} ✓",
+                f"${pr:.2f} ≥ band min ${_eff_band_min:.2f}{_junior_suffix} ✓",
             ))
     elif pp_level:
         result.checks.append(CheckResult(
@@ -361,18 +372,18 @@ def check_employee(
         ))
 
     # ── Check 3b: PP band ceiling ────────────────────────────────────────────
-    if result.band_max is not None and pr > 0:
-        if pr > result.band_max:
+    if _eff_band_max is not None and pr > 0:
+        if pr > _eff_band_max:
             result.checks.append(CheckResult(
                 "warn", "PP band ceiling",
-                f"${pr:.2f} > band max ${result.band_max:.2f} ({pp_level}) — above Carlisle band ceiling",
+                f"${pr:.2f} > band max ${_eff_band_max:.2f} ({pp_level}){_junior_suffix} — above Carlisle band ceiling",
                 "Update the Convention role in UKG to a higher band",
             ))
             result.overall = _worst(result.overall, "warn")
         else:
             result.checks.append(CheckResult(
                 "ok", "PP band ceiling",
-                f"${pr:.2f} ≤ band max ${result.band_max:.2f} — within band ✓",
+                f"${pr:.2f} ≤ band max ${_eff_band_max:.2f}{_junior_suffix} — within band ✓",
             ))
     elif pp_level:
         result.checks.append(CheckResult(
@@ -385,10 +396,9 @@ def check_employee(
         ))
 
     # ── Check 4: Junior rate ─────────────────────────────────────────────────
-    is_ss = ca_canonical is not None and "SS" in (ca_canonical or "").split()
     ref_str = effective_date.strftime("%-d %b %Y") if effective_date else "30 Jun"
     if age is not None:
-        if age < 21 and is_ss:
+        if age < 21 and _is_ss:
             pct = context.junior_rates.get(min(age, 20), 0.40)
             adult_min = floor or 0.0
             jmin = round(adult_min * pct, 2)
@@ -415,6 +425,7 @@ def check_employee(
                 if age >= 21
                 else f"Age {age} at {ref_str} (HP stream — adult rate applies)"
             )
+
             result.checks.append(CheckResult(
                 "ok", "Age check", f"{lbl} — adult rate applies ✓",
             ))

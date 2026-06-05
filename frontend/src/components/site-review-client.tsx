@@ -1155,7 +1155,7 @@ function ReviewRow({
           </div>
         )}
 
-        {/* Junior rate calculation for under-21 SS employees */}
+        {/* Junior rate applied to award floor */}
         {row.compliance.junior_minimum != null && row.compliance.award_minimum != null && (
           <div
             className="mt-2 rounded-md px-2 py-1.5 text-[10px]"
@@ -1165,6 +1165,7 @@ function ReviewRow({
             {row.compliance.junior_pct}% of {formatRate(row.compliance.award_minimum)} = <span className="font-bold">{formatRate(row.compliance.junior_minimum)}</span> min
           </div>
         )}
+
 
       </td>
 
@@ -1180,6 +1181,22 @@ function ReviewRow({
             onSave({ pp_level: conv });
           }}
         />
+        {/* Junior rate applied to PP band range */}
+        {row.compliance.junior_pct != null && row.compliance.band_min != null && (() => {
+          const pct = row.compliance.junior_pct / 100;
+          const jMin = Math.round(row.compliance.band_min * pct * 100) / 100;
+          const jMax = row.compliance.band_max != null
+            ? Math.round(row.compliance.band_max * pct * 100) / 100
+            : null;
+          return (
+            <div
+              className="mt-1.5 rounded px-2 py-1 text-[10px]"
+              style={{ background: "#fffbeb", border: "1px solid #fde68a", color: "#92400e" }}
+            >
+              {row.compliance.junior_pct}% → <span className="font-bold">{formatRate(jMin)}{jMax != null ? `–${formatRate(jMax)}` : "+"}</span>
+            </div>
+          );
+        })()}
       </td>
 
       {/* ── Current rate ────────────────────────────────────────────────── */}
@@ -1441,12 +1458,25 @@ function CompliancePanel({
         </span>
         {compliance.award_minimum != null && (
           <span className="text-xs" style={{ color: "#64748b" }}>
-            Award floor: <strong style={{ color: "#0f172a" }}>{formatRate(compliance.award_minimum)}</strong>
+            Award floor:{" "}
+            <strong style={{ color: "#0f172a" }}>
+              {compliance.junior_minimum != null
+                ? formatRate(compliance.junior_minimum)
+                : formatRate(compliance.award_minimum)}
+            </strong>
+            {compliance.junior_minimum != null && (
+              <span style={{ color: "#b45309", marginLeft: 4 }}>({compliance.junior_pct}% junior)</span>
+            )}
           </span>
         )}
         {compliance.band_min != null && compliance.band_max != null && (
           <span className="text-xs" style={{ color: "#64748b" }}>
-            PP band: <strong style={{ color: "#0f172a" }}>{formatRate(compliance.band_min)} – {formatRate(compliance.band_max)}</strong>
+            PP band:{" "}
+            <strong style={{ color: "#0f172a" }}>
+              {compliance.junior_pct != null
+                ? `${formatRate(Math.round(compliance.band_min * compliance.junior_pct / 100 * 100) / 100)} – ${formatRate(Math.round(compliance.band_max * compliance.junior_pct / 100 * 100) / 100)}`
+                : `${formatRate(compliance.band_min)} – ${formatRate(compliance.band_max)}`}
+            </strong>
           </span>
         )}
       </div>

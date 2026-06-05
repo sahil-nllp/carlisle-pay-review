@@ -287,7 +287,7 @@ async def delete_signature(
     cycle_id: int,
     db: AsyncSession = Depends(get_db),
     _user: User = Depends(get_current_user),
-) -> None:
+):
     cycle = await db.get(ReviewCycle, cycle_id)
     if not cycle:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Cycle not found")

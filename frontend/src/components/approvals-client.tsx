@@ -980,12 +980,23 @@ function CompliancePanel({
         <span className="text-xs font-bold uppercase tracking-wide" style={{ color: "#0f172a" }}>Compliance — MA000027</span>
         {compliance.award_minimum != null && (
           <span className="text-xs" style={{ color: "#64748b" }}>
-            Award floor: <strong style={{ color: "#0f172a" }}>{formatRate(compliance.award_minimum)}</strong>
+            Award floor:{" "}
+            <strong style={{ color: "#0f172a" }}>
+              {compliance.junior_minimum != null ? formatRate(compliance.junior_minimum) : formatRate(compliance.award_minimum)}
+            </strong>
+            {compliance.junior_minimum != null && (
+              <span style={{ color: "#b45309", marginLeft: 4 }}>({compliance.junior_pct}% junior)</span>
+            )}
           </span>
         )}
         {compliance.band_min != null && compliance.band_max != null && (
           <span className="text-xs" style={{ color: "#64748b" }}>
-            PP band: <strong style={{ color: "#0f172a" }}>{formatRate(compliance.band_min)} – {formatRate(compliance.band_max)}</strong>
+            PP band:{" "}
+            <strong style={{ color: "#0f172a" }}>
+              {compliance.junior_pct != null
+                ? `${formatRate(Math.round(compliance.band_min * compliance.junior_pct / 100 * 100) / 100)} – ${formatRate(Math.round(compliance.band_max * compliance.junior_pct / 100 * 100) / 100)}`
+                : `${formatRate(compliance.band_min)} – ${formatRate(compliance.band_max)}`}
+            </strong>
           </span>
         )}
       </div>

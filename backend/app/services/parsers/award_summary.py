@@ -11,9 +11,9 @@ Source columns (0-based — we ONLY read the FY25/26 columns):
   D  (3)  Combined Weekly (FY24/25)        ← IGNORED
   E  (4)  Minimum Hourly Rate (FY24/25)    ← IGNORED
   F  (5)  (blank separator)
-  G  (6)  Minimum Hourly Rate (FY25/26)    → hourly_rate
+  G  (6)  Minimum Hourly Rate (FY25/26)    → stored as hourly_rate fallback only
   H  (7)  Laundry per hour (FY25/26)       → laundry_hourly
-  I  (8)  Combined Hourly Rate (FY25/26)   → combined_hourly
+  I  (8)  Combined Hourly Rate (FY25/26)   → PRIMARY rate (stored as hourly_rate)
   ...
   O–T (14-19)  Junior multipliers          → junior_rates (header row 2, ages row 1)
 
@@ -139,8 +139,14 @@ def parse_award_summary(source: bytes | Path | str) -> AwardSummaryParseResult:
         laundry_h = _safe_float(row, COL_LAUNDRY_HOURLY_25)
         combined_h = _safe_float(row, COL_COMBINED_HOURLY_25)
 
-        # Off-award detection: hourly_rate is missing or #N/A
-        is_off_award = hourly is None or _cell_is_na(row, COL_HOURLY_25)
+        # Use Combined Hourly Rate as the primary rate (includes laundry allowance).
+        # Fall back to minimum hourly if combined is missing.
+        primary_rate = combined_h if combined_h is not None else hourly
+
+        # Off-award detection: no combined OR minimum hourly rate
+        is_off_award = primary_rate is None or (
+            _cell_is_na(row, COL_COMBINED_HOURLY_25) and _cell_is_na(row, COL_HOURLY_25)
+        )
 
         display_order += 1
         result.rates.append(
@@ -150,7 +156,7 @@ def parse_award_summary(source: bytes | Path | str) -> AwardSummaryParseResult:
                 weekly_rate=weekly,
                 laundry=laundry,
                 combined_weekly=combined_w,
-                hourly_rate=hourly,
+                hourly_rate=primary_rate,   # combined hourly is now the primary rate
                 laundry_hourly=laundry_h,
                 combined_hourly=combined_h,
                 is_off_award=is_off_award,
