@@ -377,7 +377,7 @@ def check_employee(
             result.checks.append(CheckResult(
                 "warn", "PP band ceiling",
                 f"${pr:.2f} > band max ${_eff_band_max:.2f} ({pp_level}){_junior_suffix} — above Carlisle band ceiling",
-                "Update the Convention role in UKG to a higher band",
+                "Rate is outside the Pay and Progression band",
             ))
             result.overall = _worst(result.overall, "warn")
         else:

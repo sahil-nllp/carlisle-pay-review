@@ -29,18 +29,19 @@ import {
 
 // ── Shared helpers ────────────────────────────────────────────────────────────
 const NONE = "__none__";
-const CHANGE_TYPES = ["CPI Increase", "% Increase", "Fixed Rate", "Per Admin PP", "No Change"];
+const CHANGE_TYPES = ["CPI Increase", "% Increase", "Fixed Rate", "Per Admin PP", "Bring to Award Level", "No Change"];
 const CHANGE_TYPE_LABELS: Record<string, string> = { "CPI Increase": "Award Increase", "Per Admin PP": "Per PP" };
 
 function inputKind(ct: string): "percent" | "dollars" | "none" {
   const t = ct.toLowerCase();
   if (t === "cpi increase" || t === "% increase") return "percent";
+  if (t === "bring to award level") return "dollars";
   if (t === "fixed rate" || t === "per admin pp") return "dollars";
   return "none";
 }
 function isCpiLocked(ct: string) {
   const t = ct.toLowerCase();
-  return t === "cpi increase" || t === "per admin pp";
+  return t === "cpi increase" || t === "per admin pp" || t === "bring to award level";
 }
 function formatCurrency(v: number) {
   return new Intl.NumberFormat("en-AU", { style: "currency", currency: "AUD", maximumFractionDigits: 0 }).format(v);
@@ -862,10 +863,12 @@ function ApprovalEmpRow({
               const val = v === NONE ? "" : v;
               const vl = val.toLowerCase();
               const ppBandMin = vl === "per admin pp" ? (ppBands.find((b) => b.convention === row.pp_level)?.band_min ?? null) : null;
+              const awardFloor = row.compliance.junior_minimum ?? row.compliance.award_minimum ?? null;
               const newInput =
                 vl === "cpi increase" ? String(cpiRate)
                 : vl === "per admin pp" ? String(ppBandMin ?? emp.current_rate ?? "")
                 : vl === "fixed rate"  ? String(emp.current_rate ?? "")
+                : vl === "bring to award level" ? String(awardFloor ?? emp.current_rate ?? "")
                 : row.change_input;
               onChange("change_type", val);
               onChange("change_input", newInput);

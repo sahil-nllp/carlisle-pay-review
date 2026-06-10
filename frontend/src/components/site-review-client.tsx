@@ -36,6 +36,7 @@ const CHANGE_TYPES = [
   "% Increase",
   "Fixed Rate",
   "Per Admin PP",
+  "Bring to Award Level",
   "No Change",
 ];
 
@@ -50,13 +51,13 @@ function inputKind(ct: string): "percent" | "dollars" | "none" {
   const t = ct.toLowerCase();
   if (t === "cpi increase") return "percent";   // locked to cycle CPI
   if (t === "% increase")   return "percent";   // user-editable %
-  if (t === "fixed rate" || t === "per admin pp") return "dollars";
+  if (t === "fixed rate" || t === "per admin pp" || t === "bring to award level") return "dollars";
   return "none"; // No Change
 }
 
 function isCpiLocked(ct: string) {
   const t = ct.toLowerCase();
-  return t === "cpi increase" || t === "per admin pp";
+  return t === "cpi increase" || t === "per admin pp" || t === "bring to award level";
 }
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -1226,6 +1227,7 @@ function ReviewRow({
             const ppBandMin = vl === "per admin pp"
               ? ppBands.find((b) => b.convention === row.pp_level)?.band_min ?? null
               : null;
+            const awardFloor = row.compliance.junior_minimum ?? row.compliance.award_minimum ?? null;
             const newInput =
               vl === "cpi increase"
                 ? String(cpiRate)
@@ -1233,7 +1235,9 @@ function ReviewRow({
                   ? String(ppBandMin ?? emp.current_rate ?? "")
                   : vl === "fixed rate"
                     ? String(emp.current_rate ?? "")
-                    : row.change_input;
+                    : vl === "bring to award level"
+                      ? String(awardFloor ?? emp.current_rate ?? "")
+                      : row.change_input;
             onChange("change_type", val);
             onChange("change_input", newInput);
             onSave({ change_type: val, change_input: newInput });

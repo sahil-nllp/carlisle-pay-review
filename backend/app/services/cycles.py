@@ -86,20 +86,19 @@ def calc_proposed_rate(
     """Calculate proposed rate given change type and input.
 
     change_type values: "CPI Increase" | "% Increase" | "Fixed Rate" |
-                        "No Change" | "Per Admin PP"
+                        "No Change" | "Per Admin PP" | "Bring to Award Level"
     change_input meaning:
-      - CPI Increase / % Increase : percentage (e.g. 3.5 means 3.5%)
-      - Fixed Rate / Per Admin PP  : dollar amount (the new rate directly)
-      - No Change                  : ignored
+      - CPI Increase / % Increase    : percentage (e.g. 3.5 means 3.5%)
+      - Fixed Rate / Per Admin PP    : dollar amount (the new rate directly)
+      - Bring to Award Level         : dollar amount (the award floor rate)
+      - No Change                    : ignored
     """
     if current_rate is None:
         return None
     ct = change_type.strip().lower()
     if ct in ("cpi increase", "% increase"):
         return round(current_rate * (1 + change_input / 100), 4)
-    if ct == "fixed rate":
-        return round(change_input, 4)
-    if ct == "per admin pp":
+    if ct in ("fixed rate", "per admin pp", "bring to award level"):
         return round(change_input, 4)
     if ct == "no change":
         return round(current_rate, 4)
