@@ -634,10 +634,14 @@ async def list_approvals(
     await _get_cycle_or_404(db, cycle_id)
     ctx = await cs.load_context(db, cycle_id)
 
-    # Fetch all approvals that have been submitted (exclude not_submitted)
+    # Show only pending + approved. Rejected (changes_requested) sites go back to
+    # the reviewer — they resubmit when ready, which brings them back here as pending.
     stmt = select(Approval).where(
         Approval.cycle_id == cycle_id,
-        Approval.status != ApprovalStatus.NOT_SUBMITTED.value,
+        Approval.status.in_([
+            ApprovalStatus.PENDING.value,
+            ApprovalStatus.APPROVED.value,
+        ]),
     )
     result = await db.execute(stmt)
     approvals = result.scalars().all()

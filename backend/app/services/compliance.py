@@ -280,7 +280,7 @@ def check_employee(
                 f"Set the proposed rate to at least ${floor:.2f}",
             ))
             result.overall = _worst(result.overall, "fail")
-        elif pr >= floor:
+        elif round(pr, 2) >= round(floor, 2):
             result.checks.append(CheckResult(
                 "ok", "Award floor",
                 f"${pr:.2f} ≥ ${floor:.2f} minimum ✓",
@@ -347,8 +347,10 @@ def check_employee(
     _junior_suffix = f" ({int(_junior_pct * 100)}% junior rate)" if _junior_pct else ""
 
     # ── Check 3a: PP band minimum ────────────────────────────────────────────
+    # Round to 2dp before comparing — both are 2dp money values and float
+    # representation differences cause false failures at exact boundaries.
     if _eff_band_min is not None and pr > 0:
-        if pr < _eff_band_min:
+        if round(pr, 2) < round(_eff_band_min, 2):
             gap = round(_eff_band_min - pr, 2)
             result.checks.append(CheckResult(
                 "warn", "PP band minimum",
@@ -373,7 +375,7 @@ def check_employee(
 
     # ── Check 3b: PP band ceiling ────────────────────────────────────────────
     if _eff_band_max is not None and pr > 0:
-        if pr > _eff_band_max:
+        if round(pr, 2) > round(_eff_band_max, 2):
             result.checks.append(CheckResult(
                 "warn", "PP band ceiling",
                 f"${pr:.2f} > band max ${_eff_band_max:.2f} ({pp_level}){_junior_suffix} — above Carlisle band ceiling",

@@ -119,13 +119,18 @@ export function ApprovalsClient({
   }
 
   const [, startTransition] = useTransition();
-  function handleApprove(site: string) {
+  function handleDecide(site: string, decision: "approve" | "request_changes") {
     const ds = getDs(site);
     setDs(site, { pending: true, error: null });
     startTransition(async () => {
       try {
-        const res = await decideSite(cycleId, site, { decision: "approve", comment: ds.comment || null });
-        setApprovals((prev) => prev.map((a) => a.site === site ? { ...a, status: res.status } : a));
+        const res = await decideSite(cycleId, site, { decision, comment: ds.comment || null });
+        if (decision === "request_changes") {
+          // Rejected sites are hidden from this page — remove immediately
+          setApprovals((prev) => prev.filter((a) => a.site !== site));
+        } else {
+          setApprovals((prev) => prev.map((a) => a.site === site ? { ...a, status: res.status } : a));
+        }
         setDs(site, { pending: false, comment: "" });
         router.refresh();
       } catch (err) {
@@ -133,20 +138,20 @@ export function ApprovalsClient({
       }
     });
   }
+  function handleApprove(site: string) { handleDecide(site, "approve"); }
+  function handleReject(site: string)  { handleDecide(site, "request_changes"); }
 
   const pending  = approvals.filter((a) => a.status === "pending");
   const decided  = approvals.filter((a) => a.status !== "pending");
   const approved = approvals.filter((a) => a.status === "approved").length;
-  const changed  = approvals.filter((a) => a.status === "changes_requested").length;
 
   return (
     <div className="mt-6 space-y-8" style={{ animation: "slideUp 0.4s ease both" }}>
       {/* KPI row */}
-      <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-3">
         <KpiCard label="Total submitted"   value={approvals.length} />
         <KpiCard label="Pending decision"  value={pending.length}  tone={pending.length > 0 ? "amber" : "neutral"} />
         <KpiCard label="Approved"          value={approved}        tone={approved > 0 ? "green" : "neutral"} />
-        <KpiCard label="Changes requested" value={changed}         tone={changed > 0 ? "red" : "neutral"} />
       </div>
 
       {approvals.length === 0 && (
@@ -172,6 +177,7 @@ export function ApprovalsClient({
                 ds={getDs(a.site)}
                 onCommentChange={(v) => setDs(a.site, { comment: v })}
                 onApprove={() => handleApprove(a.site)}
+                onReject={() => handleReject(a.site)}
               />
             ))}
           </div>
@@ -192,6 +198,7 @@ export function ApprovalsClient({
                 ds={getDs(a.site)}
                 onCommentChange={(v) => setDs(a.site, { comment: v })}
                 onApprove={() => {}}
+                onReject={() => {}}
               />
             ))}
           </div>
@@ -208,7 +215,7 @@ const TABLE_COL_COUNT = 13; // Emp#, Name, Age, Status, Current Award, Proposed 
 
 function ApprovalCard({
   approval: a, cycleId, cycleLabel, cpiRate, ds,
-  onCommentChange, onApprove,
+  onCommentChange, onApprove, onReject,
 }: {
   approval: ApprovalDetail;
   cycleId: number;
@@ -217,6 +224,7 @@ function ApprovalCard({
   ds: { comment: string; pending: boolean; error: string | null };
   onCommentChange: (v: string) => void;
   onApprove: () => void;
+  onReject: () => void;
 }) {
   const [expanded, setExpanded]           = useState(false);
   const [employees, setEmployees]         = useState<EmployeeWithCompliance[] | null>(null);
@@ -227,6 +235,8 @@ function ApprovalCard({
   const [editingEmpId, setEditingEmpId]   = useState<number | null>(null);
   const [loading, setLoading]             = useState(false);
   const [loadErr, setLoadErr]             = useState<string | null>(null);
+  const [showRejectConfirm, setShowRejectConfirm] = useState(false);
+  const [showApproveConfirm, setShowApproveConfirm] = useState(false);
 
   const payrollDelta = a.payroll_proposed - a.payroll_current;
 
@@ -565,27 +575,93 @@ function ApprovalCard({
           {ds.error && <p className="text-xs font-medium" style={{ color: "var(--red-600)" }}>{ds.error}</p>}
 
           <div className="flex items-center gap-2">
-            <div className="relative" title={!approvalReady ? approvalBlockers.join(" · ") : undefined}>
+            {!showApproveConfirm ? (
+              <div className="relative" title={!approvalReady ? approvalBlockers.join(" · ") : undefined}>
+                <button
+                  onClick={() => approvalReady && setShowApproveConfirm(true)}
+                  disabled={ds.pending || !approvalReady}
+                  className="rounded-lg px-5 py-2 text-sm font-semibold transition-colors"
+                  style={{
+                    background: approvalReady ? "var(--green-700)" : "var(--neutral-100)",
+                    color: approvalReady ? "white" : "var(--neutral-400)",
+                    cursor: approvalReady ? "pointer" : "not-allowed",
+                    opacity: ds.pending ? 0.5 : 1,
+                  }}
+                >
+                  {ds.pending ? "Saving…" : "✓ Approve"}
+                </button>
+                {!approvalReady && (
+                  <span className="absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center rounded-full text-[9px] font-bold"
+                    style={{ background: "var(--red-500)", color: "white" }}>
+                    {approvalBlockers.length}
+                  </span>
+                )}
+              </div>
+            ) : (
+              <div
+                className="flex items-center gap-2 rounded-lg px-3 py-2"
+                style={{ background: "#f0fdf4", border: "1px solid #bbf7d0" }}
+              >
+                <span className="text-xs font-semibold" style={{ color: "#15803d" }}>
+                  Approve this submission?
+                </span>
+                <button
+                  onClick={() => { setShowApproveConfirm(false); onApprove(); }}
+                  disabled={ds.pending}
+                  className="rounded px-3 py-1 text-xs font-bold"
+                  style={{ background: "var(--green-700)", color: "white", opacity: ds.pending ? 0.5 : 1 }}
+                >
+                  Yes, approve
+                </button>
+                <button
+                  onClick={() => setShowApproveConfirm(false)}
+                  className="rounded px-3 py-1 text-xs font-semibold"
+                  style={{ background: "var(--neutral-100)", color: "var(--neutral-700)" }}
+                >
+                  Cancel
+                </button>
+              </div>
+            )}
+            {!showRejectConfirm ? (
               <button
-                onClick={onApprove}
-                disabled={ds.pending || !approvalReady}
+                onClick={() => setShowRejectConfirm(true)}
+                disabled={ds.pending}
                 className="rounded-lg px-5 py-2 text-sm font-semibold transition-colors"
                 style={{
-                  background: approvalReady ? "var(--green-700)" : "var(--neutral-100)",
-                  color: approvalReady ? "white" : "var(--neutral-400)",
-                  cursor: approvalReady ? "pointer" : "not-allowed",
+                  background: "var(--red-50)",
+                  color: "var(--red-700)",
+                  border: "1px solid var(--red-200)",
+                  cursor: ds.pending ? "not-allowed" : "pointer",
                   opacity: ds.pending ? 0.5 : 1,
                 }}
               >
-                {ds.pending ? "Saving…" : "✓ Approve"}
+                ✗ Reject
               </button>
-              {!approvalReady && (
-                <span className="absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center rounded-full text-[9px] font-bold"
-                  style={{ background: "var(--red-500)", color: "white" }}>
-                  {approvalBlockers.length}
+            ) : (
+              <div
+                className="flex items-center gap-2 rounded-lg px-3 py-2"
+                style={{ background: "#fef2f2", border: "1px solid #fecaca" }}
+              >
+                <span className="text-xs font-semibold" style={{ color: "#b91c1c" }}>
+                  Reject this submission?
                 </span>
-              )}
-            </div>
+                <button
+                  onClick={() => { setShowRejectConfirm(false); onReject(); }}
+                  disabled={ds.pending}
+                  className="rounded px-3 py-1 text-xs font-bold"
+                  style={{ background: "var(--red-600)", color: "white", opacity: ds.pending ? 0.5 : 1 }}
+                >
+                  Yes, reject
+                </button>
+                <button
+                  onClick={() => setShowRejectConfirm(false)}
+                  className="rounded px-3 py-1 text-xs font-semibold"
+                  style={{ background: "var(--neutral-100)", color: "var(--neutral-700)" }}
+                >
+                  Cancel
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </div>}
@@ -1159,7 +1235,7 @@ function StatusBadge({ status }: { status: string }) {
     approved: { bg: "var(--green-100)", color: "var(--green-700)" },
     changes_requested: { bg: "var(--red-100)", color: "var(--red-700)" },
   };
-  const labels: Record<string, string> = { pending: "Pending approval", approved: "Approved", changes_requested: "Changes requested" };
+  const labels: Record<string, string> = { pending: "Pending approval", approved: "Approved", changes_requested: "Rejected" };
   const st = s[status] ?? { bg: "var(--neutral-100)", color: "var(--neutral-600)" };
   return <span className="rounded-full px-2.5 py-0.5 text-xs font-semibold" style={{ background: st.bg, color: st.color }}>{labels[status] ?? status}</span>;
 }
