@@ -270,28 +270,38 @@ def check_employee(
         ))
         result.overall = _worst(result.overall, "warn")
 
+    # ── Junior multiplier — computed early so Award floor and PP band checks both use it
+    _is_ss = ca_canonical is not None and "SS" in (ca_canonical or "").split()
+    _junior_pct: float | None = None
+    if age is not None and age < 21 and _is_ss:
+        _junior_pct = context.junior_rates.get(min(age, 20), 0.40)
+    _junior_suffix = f" ({int(_junior_pct * 100)}% junior rate)" if _junior_pct else ""
+
     # ── Check 2: Award floor ─────────────────────────────────────────────────
+    # For junior employees use the age-adjusted floor, not the adult minimum.
+    # Round to 2dp before comparing — float representation differences cause false failures.
     floor = result.award_minimum
-    if floor is not None:
+    eff_floor = round(floor * _junior_pct, 2) if floor is not None and _junior_pct else floor
+    if eff_floor is not None:
         if pr == 0:
             result.checks.append(CheckResult(
                 "fail", "Award floor",
-                f"No proposed rate set — must be ≥ ${floor:.2f}",
-                f"Set the proposed rate to at least ${floor:.2f}",
+                f"No proposed rate set — must be ≥ ${eff_floor:.2f}",
+                f"Set the proposed rate to at least ${eff_floor:.2f}",
             ))
             result.overall = _worst(result.overall, "fail")
-        elif round(pr, 2) >= round(floor, 2):
+        elif round(pr, 2) >= round(eff_floor, 2):
             result.checks.append(CheckResult(
                 "ok", "Award floor",
-                f"${pr:.2f} ≥ ${floor:.2f} minimum ✓",
+                f"${pr:.2f} ≥ ${eff_floor:.2f} minimum{_junior_suffix} ✓",
             ))
         else:
-            gap = round(floor - pr, 2)
-            pct_need = round(((floor / cr) - 1) * 100, 2) if cr else 0
+            gap = round(eff_floor - pr, 2)
+            pct_need = round(((eff_floor / cr) - 1) * 100, 2) if cr else 0
             result.checks.append(CheckResult(
                 "fail", "Award floor",
-                f"${pr:.2f} < ${floor:.2f} minimum — short by ${gap:.2f}",
-                f"Raise to {pct_need:.1f}% increase, or Fixed Rate ${floor:.2f}",
+                f"${pr:.2f} < ${eff_floor:.2f} minimum{_junior_suffix} — short by ${gap:.2f}",
+                f"Raise to {pct_need:.1f}% increase, or Fixed Rate ${eff_floor:.2f}",
             ))
             result.overall = _worst(result.overall, "fail")
     else:
@@ -335,16 +345,9 @@ def check_employee(
         if highest:
             result.next_level = highest
 
-    # ── Junior multiplier (needed for PP band checks below) ──────────────────
-    _is_ss = ca_canonical is not None and "SS" in (ca_canonical or "").split()
-    _junior_pct: float | None = None
-    if age is not None and age < 21 and _is_ss:
-        _junior_pct = context.junior_rates.get(min(age, 20), 0.40)
-
     # Effective band bounds — apply junior multiplier if applicable
     _eff_band_min = round(result.band_min * _junior_pct, 2) if result.band_min is not None and _junior_pct else result.band_min
     _eff_band_max = round(result.band_max * _junior_pct, 2) if result.band_max is not None and _junior_pct else result.band_max
-    _junior_suffix = f" ({int(_junior_pct * 100)}% junior rate)" if _junior_pct else ""
 
     # ── Check 3a: PP band minimum ────────────────────────────────────────────
     # Round to 2dp before comparing — both are 2dp money values and float
