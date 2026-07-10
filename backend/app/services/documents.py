@@ -442,9 +442,15 @@ def generate_letters_zip(
     employees: list["Employee"],
     cycle: "ReviewCycle",
     out_path: Path,
+    *,
+    draft: bool = False,
 ) -> int:
-    """Generate final Letter A/B/C PDFs (no watermark), zip them, write to out_path.
-    Returns number of letters generated."""
+    """Generate Letter A/B/C PDFs, zip them, write to out_path.
+    Returns number of letters generated.
+
+    draft=False → final letters, no watermark (used on site approval).
+    draft=True  → "DRAFT" watermark — for in-progress review, before approval.
+    """
 
     MIN_INCREASE = 0.10  # skip trivial rate bumps
 
@@ -466,8 +472,9 @@ def generate_letters_zip(
                 if pr > 0 and cr > 0 and 0 < (pr - cr) < MIN_INCREASE:
                     continue
 
-            pdf_bytes = _build_letter_pdf(lt, emp, cycle, draft=False)
-            fname = f"{_safe(emp.last_name)}_{_safe(emp.first_name)}_Letter{lt}.pdf"
+            pdf_bytes = _build_letter_pdf(lt, emp, cycle, draft=draft)
+            prefix = "DRAFT_" if draft else ""
+            fname = f"{prefix}{_safe(emp.last_name)}_{_safe(emp.first_name)}_Letter{lt}.pdf"
             zf.writestr(f"Letter {lt}/{fname}", pdf_bytes)
             count += 1
 
@@ -482,12 +489,18 @@ def generate_ukg_upload(
     employees: list["Employee"],
     cycle: "ReviewCycle",
     out_path: Path,
+    *,
+    draft: bool = False,
 ) -> int:
-    """Generate the UKG Payroll Metrics import .xlsx. Returns row count."""
+    """Generate the UKG Payroll Metrics import .xlsx. Returns row count.
+
+    draft=True marks the file clearly as NOT for payroll import — used when a
+    reviewer exports mid-review, before the site has been approved.
+    """
     import openpyxl
     from openpyxl.styles import Alignment, Font, PatternFill
 
-    NAVY = "1F3864"; YELLOW = "FFF2CC"; WHITE = "FFFFFF"
+    NAVY = "1F3864"; YELLOW = "FFF2CC"; WHITE = "FFFFFF"; DRAFT_RED = "C00000"
 
     def fill(c): return PatternFill("solid", fgColor=c)
     def fnt(bold=False): return Font(bold=bold, size=10, name="Calibri")
@@ -513,28 +526,39 @@ def generate_ukg_upload(
 
     col_widths = [28, 15, 15, 15, 16, 24, 14, 20, 20, 12]
 
-    # Row 1: title banner
-    ws.row_dimensions[1].height = 20
+    row_offset = 0
+    if draft:
+        ws.row_dimensions[1].height = 20
+        wc = ws.cell(1, 1, "DRAFT — NOT YET APPROVED — DO NOT IMPORT INTO PAYROLL")
+        wc.font = Font(bold=True, size=11, color=WHITE, name="Calibri")
+        wc.fill = fill(DRAFT_RED)
+        ws.merge_cells(f"A1:{chr(64 + len(headers))}1")
+        row_offset = 1
+
+    # Row 1 (or 2 if draft banner present): title banner
+    title_row = 1 + row_offset
+    ws.row_dimensions[title_row].height = 20
     title_text = (
-        f"UKG Payroll Metrics Upload — {cycle.fy_label}  |  "
+        f"{'DRAFT — ' if draft else ''}UKG Payroll Metrics Upload — {cycle.fy_label}  |  "
         f"Effective {eff}  |  Yellow = mandatory"
     )
-    tc = ws.cell(1, 1, title_text)
+    tc = ws.cell(title_row, 1, title_text)
     tc.font = Font(bold=True, size=11, color=WHITE, name="Calibri")
     tc.fill = fill(NAVY)
-    ws.merge_cells(f"A1:{chr(64 + len(headers))}1")
+    ws.merge_cells(f"A{title_row}:{chr(64 + len(headers))}{title_row}")
 
-    # Row 2: column headers
-    ws.row_dimensions[2].height = 36
+    # Header row (row 2, or 3 if draft banner present)
+    header_row = 2 + row_offset
+    ws.row_dimensions[header_row].height = 36
     for i, (h, mandatory, note) in enumerate(headers, 1):
-        c = ws.cell(2, i, h + (" *" if mandatory else ""))
+        c = ws.cell(header_row, i, h + (" *" if mandatory else ""))
         c.font = Font(bold=True, size=10, name="Calibri")
         c.fill = fill(YELLOW if mandatory else "F2F2F2")
         c.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
         ws.column_dimensions[chr(64 + i)].width = col_widths[i - 1]
 
     # Data rows
-    row_num = 3
+    row_num = header_row + 1
     for emp in employees:
         if emp.is_departed or emp.is_excluded:
             continue
@@ -566,7 +590,7 @@ def generate_ukg_upload(
         row_num += 1
 
     wb.save(str(out_path))
-    return row_num - 3
+    return row_num - (header_row + 1)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -577,14 +601,20 @@ def generate_regional_excel(
     cycle: "ReviewCycle",
     site: str,
     out_path: Path,
+    *,
+    draft: bool = False,
 ) -> int:
-    """Generate a read-only approved-rates summary Excel for the regional manager."""
+    """Generate a read-only rates summary Excel for the regional manager.
+
+    draft=True labels the sheet/title as a working snapshot rather than
+    "Approved" — used when exporting mid-review, before the site is approved.
+    """
     import openpyxl
     from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
     from openpyxl.utils import get_column_letter
 
     NAVY = "1F3864"; WHITE = "FFFFFF"; GREY = "F2F2F2"; GREEN = "E2EFDA"
-    AMBER = "FFF2CC"; BLUE = "D6E4F0"
+    AMBER = "FFF2CC"; BLUE = "D6E4F0"; DRAFT_RED = "C00000"
 
     def fill(c): return PatternFill("solid", fgColor=c)
     def fnt(bold=False, color="000000", size=10):
@@ -597,7 +627,7 @@ def generate_regional_excel(
 
     wb = openpyxl.Workbook()
     ws = wb.active
-    ws.title = "Approved Rates"
+    ws.title = "Working Rates" if draft else "Approved Rates"
     ws.sheet_view.showGridLines = False
     ws.freeze_panes = "A3"
 
@@ -623,9 +653,10 @@ def generate_regional_excel(
 
     # Row 1: title
     ws.row_dimensions[1].height = 26
-    tc = ws.cell(1, 1, f"Approved Pay Rates — {site} — {cycle.fy_label}  |  Effective {_fmt_date(cycle.effective_date)}")
+    title_label = "DRAFT — NOT YET APPROVED — Working Pay Rates" if draft else "Approved Pay Rates"
+    tc = ws.cell(1, 1, f"{title_label} — {site} — {cycle.fy_label}  |  Effective {_fmt_date(cycle.effective_date)}")
     tc.font = Font(bold=True, size=12, color=WHITE, name="Calibri")
-    tc.fill = fill(NAVY)
+    tc.fill = fill(DRAFT_RED if draft else NAVY)
     tc.alignment = left()
     ws.merge_cells(f"A1:{get_column_letter(len(columns))}1")
 

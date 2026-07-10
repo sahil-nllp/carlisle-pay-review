@@ -1272,3 +1272,93 @@ async def get_draft_letters_zip(
         media_type="application/zip",
         headers={"Content-Disposition": f'attachment; filename="{zip_filename}"'},
     )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  On-demand DRAFT exports — work mid-review, before the site is approved.
+#  Not persisted as GeneratedFile records (those are reserved for the final,
+#  approved outputs shown on the Downloads page).
+# ─────────────────────────────────────────────────────────────────────────────
+async def _draft_export_site_emps(
+    db: AsyncSession, cycle_id: int, site: str, user: User,
+) -> tuple[ReviewCycle, list[Employee], str]:
+    """Shared setup for the draft-export endpoints below."""
+    decoded_site = unquote(site)
+    cycle = await _get_cycle_or_404(db, cycle_id)
+
+    if (
+        user.role == UserRole.REGIONAL_MANAGER.value
+        and user.site
+        and decoded_site.lower() not in {s.strip().lower() for s in user.site.split(",")}
+    ):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Access denied")
+
+    employees = await cycle_service.get_cycle_employees(db, cycle_id)
+    site_emps = [
+        e for e in employees
+        if e.site.lower() == decoded_site.lower() and not e.is_departed and not e.is_excluded
+    ]
+    if not site_emps:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No active employees found for this site")
+    return cycle, site_emps, decoded_site
+
+
+@router.get("/cycles/{cycle_id}/sites/{site}/draft-ukg.xlsx")
+async def get_draft_ukg_upload(
+    cycle_id: int,
+    site: str,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> StreamingResponse:
+    """Download a DRAFT UKG payroll upload for a site, using whatever proposed
+    rates are set right now — no approval required. Clearly watermarked so it
+    can't be mistaken for the final, approval-triggered UKG file."""
+    import io
+    import re as _re
+    import tempfile
+    from pathlib import Path as _Path
+
+    cycle, site_emps, decoded_site = await _draft_export_site_emps(db, cycle_id, site, user)
+
+    with tempfile.TemporaryDirectory() as tmp:
+        out_path = _Path(tmp) / "draft_ukg.xlsx"
+        doc_service.generate_ukg_upload(site_emps, cycle, out_path, draft=True)
+        data = out_path.read_bytes()
+
+    safe_site = _re.sub(r'[\\/*?:"<>|]', "_", decoded_site)
+    filename = f"DRAFT_UKG_Payroll_{safe_site}.xlsx"
+    return StreamingResponse(
+        io.BytesIO(data),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get("/cycles/{cycle_id}/sites/{site}/draft-regional-excel.xlsx")
+async def get_draft_regional_excel(
+    cycle_id: int,
+    site: str,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> StreamingResponse:
+    """Download a DRAFT working-rates Excel for a site, using whatever data is
+    set right now — no approval required."""
+    import io
+    import re as _re
+    import tempfile
+    from pathlib import Path as _Path
+
+    cycle, site_emps, decoded_site = await _draft_export_site_emps(db, cycle_id, site, user)
+
+    with tempfile.TemporaryDirectory() as tmp:
+        out_path = _Path(tmp) / "draft_regional.xlsx"
+        doc_service.generate_regional_excel(site_emps, cycle, decoded_site, out_path, draft=True)
+        data = out_path.read_bytes()
+
+    safe_site = _re.sub(r'[\\/*?:"<>|]', "_", decoded_site)
+    filename = f"DRAFT_WorkingRates_{safe_site}.xlsx"
+    return StreamingResponse(
+        io.BytesIO(data),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )

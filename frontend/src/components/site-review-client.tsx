@@ -7,6 +7,8 @@ import { ApiError } from "@/lib/api";
 import {
   downloadDraftLetter,
   downloadDraftLettersZip,
+  downloadDraftRegionalExcel,
+  downloadDraftUkgUpload,
   getSiteEmployees,
   patchEmployee,
   submitSite,
@@ -130,8 +132,25 @@ export function SiteReviewClient({
   const [expandedId, setExpandedId] = useState<number | null>(null);
   type Filter = "belowAward" | "missingRate" | "unresolvedWarn" | "noLetter" | null;
   const [activeFilter, setActiveFilter] = useState<Filter>(null);
+  const [search, setSearch] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState<string>("");
+  type SortKey = "emp_num" | "name" | "current_rate" | "proposed_rate";
+  const [sortKey, setSortKey] = useState<SortKey | null>(null);
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
 
   const toggleFilter = (f: Filter) => setActiveFilter((prev) => prev === f ? null : f);
+  function toggleSort(key: SortKey) {
+    if (sortKey === key) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(key);
+      setSortDir("asc");
+    }
+  }
+  function sortArrow(key: SortKey) {
+    if (sortKey !== key) return <span style={{ opacity: 0.3, marginLeft: 3 }}>↕</span>;
+    return <span style={{ marginLeft: 3 }}>{sortDir === "asc" ? "↑" : "↓"}</span>;
+  }
   // Track the latest save ID per employee — used to discard stale in-flight responses
   const saveSeqRef = React.useRef<Record<number, number>>({});
   const [isSubmitting, startSubmitting] = useTransition();
@@ -141,6 +160,8 @@ export function SiteReviewClient({
   } | null>(null);
   const [showDeparted, setShowDeparted] = useState(false);
   const [isDraftZipping, setIsDraftZipping] = useState(false);
+  const [isUkgDraftDownloading, setIsUkgDraftDownloading] = useState(false);
+  const [isRegionalDraftDownloading, setIsRegionalDraftDownloading] = useState(false);
   const [showSubmitConfirm, setShowSubmitConfirm] = useState(false);
 
   // Called when suppress / unsuppress returns a fresh employee record
@@ -179,10 +200,33 @@ export function SiteReviewClient({
     () => employees.filter((e) => !e.is_departed),
     [employees],
   );
-  // Filtered list for the table based on the active badge filter
-  const filteredActive = useMemo(() => {
-    if (!activeFilter) return active;
+  // Distinct employee categories present in this site, for the filter dropdown
+  const categoryOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const emp of active) if (emp.category) set.add(emp.category);
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [active]);
+
+  // Search by employee # or name
+  const searchedActive = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return active;
     return active.filter((emp) => {
+      const fullName = `${emp.first_name} ${emp.last_name}`.toLowerCase();
+      return emp.emp_num.toLowerCase().includes(q) || fullName.includes(q);
+    });
+  }, [active, search]);
+
+  // Filter by employee category
+  const categoryFilteredActive = useMemo(() => {
+    if (!categoryFilter) return searchedActive;
+    return searchedActive.filter((emp) => emp.category === categoryFilter);
+  }, [searchedActive, categoryFilter]);
+
+  // Filtered list for the table based on the active badge filter
+  const statusFilteredActive = useMemo(() => {
+    if (!activeFilter) return categoryFilteredActive;
+    return categoryFilteredActive.filter((emp) => {
       const row = rows[emp.id];
       if (!row) return false;
       if (activeFilter === "belowAward")
@@ -195,7 +239,37 @@ export function SiteReviewClient({
         return !!row.proposed_rate && !row.letter_type;
       return true;
     });
-  }, [active, rows, activeFilter]);
+  }, [categoryFilteredActive, rows, activeFilter]);
+
+  // Sorted list — sort applied last, on top of search + status filter
+  const filteredActive = useMemo(() => {
+    if (!sortKey) return statusFilteredActive;
+    const dir = sortDir === "asc" ? 1 : -1;
+    const arr = [...statusFilteredActive];
+    arr.sort((a, b) => {
+      let av: string | number;
+      let bv: string | number;
+      if (sortKey === "emp_num") {
+        const an = parseInt(a.emp_num, 10);
+        const bn = parseInt(b.emp_num, 10);
+        if (!Number.isNaN(an) && !Number.isNaN(bn)) { av = an; bv = bn; }
+        else { av = a.emp_num; bv = b.emp_num; }
+      } else if (sortKey === "name") {
+        av = `${a.first_name} ${a.last_name}`.toLowerCase();
+        bv = `${b.first_name} ${b.last_name}`.toLowerCase();
+      } else if (sortKey === "current_rate") {
+        av = a.current_rate ?? -Infinity;
+        bv = b.current_rate ?? -Infinity;
+      } else {
+        av = rows[a.id]?.proposed_rate ?? -Infinity;
+        bv = rows[b.id]?.proposed_rate ?? -Infinity;
+      }
+      if (av < bv) return -1 * dir;
+      if (av > bv) return 1 * dir;
+      return 0;
+    });
+    return arr;
+  }, [statusFilteredActive, rows, sortKey, sortDir]);
 
   // Excluded employees are shown in the table but not counted in any stats
   const activeForStats = useMemo(
@@ -659,28 +733,77 @@ export function SiteReviewClient({
         </div>
       )}
 
-      {/* ── Summary badges ───────────────────────────────────────────────── */}
-      <div className="flex flex-wrap gap-2">
-        {tableSummary.belowAward > 0 && (
-          <SummaryBadge icon="✗" count={tableSummary.belowAward} label="below award minimum" bg="#fee2e2" color="#dc2626" border="#fecaca"
-            active={activeFilter === "belowAward"} onClick={() => toggleFilter("belowAward")} />
-        )}
-        {tableSummary.missingRate > 0 && (
-          <SummaryBadge icon="—" count={tableSummary.missingRate} label="missing proposed rate" bg="#fff7ed" color="#c2410c" border="#fed7aa"
-            active={activeFilter === "missingRate"} onClick={() => toggleFilter("missingRate")} />
-        )}
-        {tableSummary.unresolvedWarn > 0 && (
-          <SummaryBadge icon="⚠" count={tableSummary.unresolvedWarn} label="unresolved warnings" bg="#fffbeb" color="#b45309" border="#fde68a"
-            active={activeFilter === "unresolvedWarn"} onClick={() => toggleFilter("unresolvedWarn")} />
-        )}
-        {tableSummary.noLetter > 0 && (
-          <SummaryBadge icon="✉" count={tableSummary.noLetter} label="no letter assigned" bg="#f8fafc" color="#475569" border="#cbd5e1"
-            active={activeFilter === "noLetter"} onClick={() => toggleFilter("noLetter")} />
-        )}
-        {tableSummary.belowAward === 0 && tableSummary.missingRate === 0 &&
-         tableSummary.unresolvedWarn === 0 && (
-          <SummaryBadge icon="✓" count={activeForStats.length} label="all employees ready" bg="#f0fdf4" color="#16a34a" border="#bbf7d0" />
-        )}
+      {/* ── Summary badges + search/category (right-aligned) ─────────────── */}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap gap-2">
+          {tableSummary.belowAward > 0 && (
+            <SummaryBadge icon="✗" count={tableSummary.belowAward} label="below award minimum" bg="#fee2e2" color="#dc2626" border="#fecaca"
+              active={activeFilter === "belowAward"} onClick={() => toggleFilter("belowAward")} />
+          )}
+          {tableSummary.missingRate > 0 && (
+            <SummaryBadge icon="—" count={tableSummary.missingRate} label="missing proposed rate" bg="#fff7ed" color="#c2410c" border="#fed7aa"
+              active={activeFilter === "missingRate"} onClick={() => toggleFilter("missingRate")} />
+          )}
+          {tableSummary.unresolvedWarn > 0 && (
+            <SummaryBadge icon="⚠" count={tableSummary.unresolvedWarn} label="unresolved warnings" bg="#fffbeb" color="#b45309" border="#fde68a"
+              active={activeFilter === "unresolvedWarn"} onClick={() => toggleFilter("unresolvedWarn")} />
+          )}
+          {tableSummary.noLetter > 0 && (
+            <SummaryBadge icon="✉" count={tableSummary.noLetter} label="no letter assigned" bg="#f8fafc" color="#475569" border="#cbd5e1"
+              active={activeFilter === "noLetter"} onClick={() => toggleFilter("noLetter")} />
+          )}
+          {tableSummary.belowAward === 0 && tableSummary.missingRate === 0 &&
+           tableSummary.unresolvedWarn === 0 && (
+            <SummaryBadge icon="✓" count={activeForStats.length} label="all employees ready" bg="#f0fdf4" color="#16a34a" border="#bbf7d0" />
+          )}
+        </div>
+
+        <div className="flex items-center gap-2">
+          <div className="relative" style={{ width: 260 }}>
+            <svg
+              width="13" height="13" viewBox="0 0 15 15" fill="none"
+              style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", pointerEvents: "none" }}
+            >
+              <circle cx="6.5" cy="6.5" r="4.5" stroke="var(--neutral-400)" strokeWidth="1.25" />
+              <path d="M10 10l3 3" stroke="var(--neutral-400)" strokeWidth="1.25" strokeLinecap="round" />
+            </svg>
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search employee # or name…"
+              className="w-full rounded-lg py-1.5 pl-8 pr-7 text-xs focus:outline-none"
+              style={{ border: "1px solid var(--neutral-200)", color: "var(--neutral-800)", background: "white" }}
+            />
+            {search && (
+              <button
+                onClick={() => setSearch("")}
+                className="absolute text-xs font-semibold"
+                style={{ right: 8, top: "50%", transform: "translateY(-50%)", color: "var(--neutral-400)", cursor: "pointer" }}
+                title="Clear search"
+              >
+                ×
+              </button>
+            )}
+          </div>
+
+          {categoryOptions.length > 0 && (
+            <Select
+              value={categoryFilter || NONE}
+              onValueChange={(v) => setCategoryFilter(v === NONE ? "" : v)}
+            >
+              <SelectTrigger className="h-7 text-xs" style={{ width: 170 }}>
+                <SelectValue placeholder="All categories" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NONE} className="text-xs">All categories</SelectItem>
+                {categoryOptions.map((c) => (
+                  <SelectItem key={c} value={c} className="text-xs">{c}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+        </div>
       </div>
 
       {/* ── Review table ──────────────────────────────────────────────────── */}
@@ -744,30 +867,67 @@ export function SiteReviewClient({
                         }}
                         disabled={isDraftZipping}
                         className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold disabled:opacity-60"
-                        style={{ background: "#0369a1", color: "white" }}
+                        style={{ background: "#0369a1", color: "white", cursor: isDraftZipping ? "not-allowed" : "pointer" }}
+                        title="Draft letter PDFs — only for compliance-clean employees with a letter assigned"
                       >
                         {isDraftZipping
                           ? "Zipping…"
                           : `⬇ ${tableSummary.draftReady} draft${tableSummary.draftReady !== 1 ? "s" : ""}`}
                       </button>
                     )}
+                    <button
+                      onClick={async () => {
+                        setIsUkgDraftDownloading(true);
+                        try {
+                          await downloadDraftUkgUpload(cycleId, site);
+                        } catch (err) {
+                          alert("Download failed: " + (err instanceof Error ? err.message : String(err)));
+                        } finally {
+                          setIsUkgDraftDownloading(false);
+                        }
+                      }}
+                      disabled={isUkgDraftDownloading}
+                      className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold disabled:opacity-60"
+                      style={{ background: "white", color: "var(--neutral-600)", border: "1px solid var(--neutral-200)", cursor: isUkgDraftDownloading ? "not-allowed" : "pointer" }}
+                      title="Working UKG payroll upload — snapshot of current proposed rates, watermarked DRAFT, not for payroll import"
+                    >
+                      {isUkgDraftDownloading ? "Preparing…" : "⬇ UKG (draft)"}
+                    </button>
+                    <button
+                      onClick={async () => {
+                        setIsRegionalDraftDownloading(true);
+                        try {
+                          await downloadDraftRegionalExcel(cycleId, site);
+                        } catch (err) {
+                          alert("Download failed: " + (err instanceof Error ? err.message : String(err)));
+                        } finally {
+                          setIsRegionalDraftDownloading(false);
+                        }
+                      }}
+                      disabled={isRegionalDraftDownloading}
+                      className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold disabled:opacity-60"
+                      style={{ background: "white", color: "var(--neutral-600)", border: "1px solid var(--neutral-200)", cursor: isRegionalDraftDownloading ? "not-allowed" : "pointer" }}
+                      title="Working rates summary — snapshot of current data, watermarked DRAFT"
+                    >
+                      {isRegionalDraftDownloading ? "Preparing…" : "⬇ Working Excel"}
+                    </button>
                   </div>
                 </div>
               </th>
             </tr>
             {/* ── Column headers ── */}
             <tr>
-              <Th align="left"  >Emp #</Th>
-              <Th align="left"  >Name</Th>
+              <Th align="left"   onClick={() => toggleSort("emp_num")}>Emp # {sortArrow("emp_num")}</Th>
+              <Th align="left"   onClick={() => toggleSort("name")}>Name {sortArrow("name")}</Th>
               <Th align="center">Age</Th>
               <Th align="center">Status</Th>
               <Th align="left"  >Current Award</Th>
               <Th align="left"  >Proposed Award</Th>
               <Th align="left"  >PP Level</Th>
-              <Th align="right" >Current Rate</Th>
+              <Th align="right"  onClick={() => toggleSort("current_rate")}>Current Rate {sortArrow("current_rate")}</Th>
               <Th align="left"  >Change Type</Th>
               <Th align="right" >Input</Th>
-              <Th align="right" >Proposed Rate</Th>
+              <Th align="right"  onClick={() => toggleSort("proposed_rate")}>Proposed Rate {sortArrow("proposed_rate")}</Th>
               <Th align="center">Letter</Th>
               {!locked && <Th align="center">Actions</Th>}
             </tr>
@@ -917,14 +1077,17 @@ function Th({
   children,
   align = "left",
   history = false,
+  onClick,
 }: {
   children: React.ReactNode;
   align?: "left" | "right" | "center";
   history?: boolean;
+  onClick?: () => void;
 }) {
   return (
     <th
-      className={`px-3 py-2.5 text-[10px] font-semibold uppercase tracking-wider leading-tight`}
+      onClick={onClick}
+      className={`px-3 py-2.5 text-[10px] font-semibold uppercase tracking-wider leading-tight${onClick ? " select-none" : ""}`}
       style={{
         textAlign: align,
         background: "#0f172a",
@@ -934,6 +1097,7 @@ function Th({
         position: "sticky",
         top: "44px",
         zIndex: 10,
+        cursor: onClick ? "pointer" : undefined,
       }}
     >
       {children}

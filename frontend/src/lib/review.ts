@@ -240,3 +240,19 @@ export async function downloadDraftLettersZip(cycleId: number, site: string): Pr
     `draft-letters-${site}.zip`,
   );
 }
+
+/** Download a DRAFT UKG payroll upload for a site, using whatever's set right now. */
+export async function downloadDraftUkgUpload(cycleId: number, site: string): Promise<void> {
+  await _triggerBlobDownload(
+    `${API_URL}/api/v1/cycles/${cycleId}/sites/${encodeURIComponent(site)}/draft-ukg.xlsx`,
+    `draft-ukg-${site}.xlsx`,
+  );
+}
+
+/** Download a DRAFT working-rates Excel for a site, using whatever's set right now. */
+export async function downloadDraftRegionalExcel(cycleId: number, site: string): Promise<void> {
+  await _triggerBlobDownload(
+    `${API_URL}/api/v1/cycles/${cycleId}/sites/${encodeURIComponent(site)}/draft-regional-excel.xlsx`,
+    `draft-working-rates-${site}.xlsx`,
+  );
+}
