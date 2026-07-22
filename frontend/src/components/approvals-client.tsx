@@ -1107,7 +1107,7 @@ function CheckCard({
 
   const isSuppressed  = check.status === "suppressed";
   const canSuppress   = check.status === "warn" && !locked &&
-    !["Pay progression", "PP band minimum"].includes(check.label);
+    !["Pay progression"].includes(check.label);
   const canUnsuppress = isSuppressed && !locked;
 
   const statusStyles = {
