@@ -68,12 +68,9 @@ def _build_letter_doc(
     fy_label = cycle.fy_label or ""
     fy_parts = fy_label.replace("FY", "").split("-")
     fy_current = f"{fy_parts[0]}-{fy_parts[1]}" if len(fy_parts) == 2 else fy_label
-    fy_prev = f"{int(fy_parts[0]) - 1}-{fy_parts[0]}" if fy_parts else ""
 
     letter_date = _fmt_date(cycle.letter_date)
-    effective_text = f"first full pay period on or after {_fmt_date(cycle.effective_date)}"
-    super_old = cycle.super_old or "11.5%"
-    super_new = cycle.super_new or "12.0%"
+    effective_text = f"from {_fmt_date(cycle.effective_date)}"
     consultation_dl = (
         _fmt_date(cycle.consultation_deadline)
         if cycle.consultation_deadline
@@ -143,7 +140,7 @@ def _build_letter_doc(
             f"Your level under the Award is: {award_level}"
         )
         add(
-            f"This change will be reflected in your pay for the {effective_text}, "
+            f"This change will be reflected in your pay {effective_text}, "
             f"i.e. the first full pay period of the new financial year."
         )
     elif letter_type == "B":
@@ -155,7 +152,7 @@ def _build_letter_doc(
         add(
             f"Your Hourly Rate per your contract will be increased from {_fmt_rate(current_rate)} per hour "
             f"to {_fmt_rate(proposed_rate)} per hour (exclusive of superannuation). This change will be "
-            f"reflected in your pay for the {effective_text}, i.e. the first full pay period of the new "
+            f"reflected in your pay {effective_text}, i.e. the first full pay period of the new "
             f"financial year."
         )
         add(
@@ -185,13 +182,6 @@ def _build_letter_doc(
 
     blank()
 
-    # Super paragraph
-    add(
-        f"The rate of superannuation will also increase in line with national requirements from "
-        f"{super_old} for the {fy_prev} financial year to {super_new} for the {fy_current} "
-        f"financial year. This applies to all employees."
-    )
-    blank()
     add(
         "All other terms and conditions governing your employment continue to apply as per "
         "your current employment contract."
@@ -240,12 +230,9 @@ def _build_letter_pdf(
     fy_label   = cycle.fy_label or ""
     fy_parts   = fy_label.replace("FY", "").split("-")
     fy_current = f"{fy_parts[0]}-{fy_parts[1]}" if len(fy_parts) == 2 else fy_label
-    fy_prev    = f"{int(fy_parts[0]) - 1}-{fy_parts[0]}" if fy_parts else ""
 
     letter_date    = "[DATE]" if draft else _fmt_date(cycle.letter_date)
-    effective_text = f"first full pay period on or after {_fmt_date(cycle.effective_date)}"
-    super_old      = cycle.super_old or "11.5%"
-    super_new      = cycle.super_new or "12.0%"
+    effective_text = f"from {_fmt_date(cycle.effective_date)}"
     consultation_dl = (
         _fmt_date(cycle.consultation_deadline)
         if hasattr(cycle, "consultation_deadline") and cycle.consultation_deadline
@@ -330,7 +317,7 @@ def _build_letter_pdf(
             f"Your level under the Award is: {award_level}"
         )
         para(
-            f"This change will be reflected in your pay for the {effective_text}, "
+            f"This change will be reflected in your pay {effective_text}, "
             f"i.e. the first full pay period of the new financial year."
         )
     elif letter_type == "B":
@@ -342,7 +329,7 @@ def _build_letter_pdf(
         para(
             f"Your Hourly Rate per your contract will be increased from {_fmt_rate(current_rate)} per hour "
             f"to {_fmt_rate(proposed_rate)} per hour (exclusive of superannuation). This change will be "
-            f"reflected in your pay for the {effective_text}, i.e. the first full pay period of the new "
+            f"reflected in your pay {effective_text}, i.e. the first full pay period of the new "
             f"financial year."
         )
         para(
@@ -370,12 +357,6 @@ def _build_letter_pdf(
 
     gap(2)
 
-    # Super paragraph (common to all)
-    para(
-        f"The rate of superannuation will also increase in line with national requirements from "
-        f"{super_old} for the {fy_prev} financial year to {super_new} for the {fy_current} "
-        f"financial year. This applies to all employees."
-    )
     para(
         "All other terms and conditions governing your employment continue to apply as per "
         "your current employment contract."
