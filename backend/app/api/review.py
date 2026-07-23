@@ -880,6 +880,26 @@ async def decide_site(
                 except Exception as exc:
                     print(f"[documents] {file_type} failed for {site}: {exc}")
 
+            # Legacy mail-merge .xlsm — one per letter type, only if this site
+            # actually has employees on that letter type this cycle.
+            for lt in ("A", "B", "C"):
+                file_type = f"mailmerge_{lt.lower()}"
+                filename = f"MailMerge_Letter{lt}_{safe_site}_{safe_fy}.xlsm"
+                try:
+                    file_path = out_dir / filename
+                    count = doc_service.generate_mailmerge_xlsm(site_emps, cycle, lt, file_path)
+                    if count == 0:
+                        continue
+                    generated.append(GeneratedFile(
+                        cycle_id=cycle_id, site=site,
+                        file_type=file_type, filename=filename,
+                        file_path=str(file_path),
+                        file_size=file_path.stat().st_size if file_path.exists() else None,
+                        generated_by_id=user.id,
+                    ))
+                except Exception as exc:
+                    print(f"[documents] {file_type} failed for {site}: {exc}")
+
             for gf in generated:
                 db.add(gf)
             if generated:
@@ -1026,6 +1046,26 @@ async def regenerate_site_files(
         try:
             file_path = out_dir / filename
             generator(file_path)
+            generated.append(GeneratedFile(
+                cycle_id=cycle_id,
+                site=decoded_site,
+                file_type=file_type,
+                filename=filename,
+                file_path=str(file_path),
+                file_size=file_path.stat().st_size if file_path.exists() else None,
+                generated_by_id=user.id,
+            ))
+        except Exception as exc:
+            print(f"[regenerate] {file_type} failed for {decoded_site}: {exc}")
+
+    for lt in ("A", "B", "C"):
+        file_type = f"mailmerge_{lt.lower()}"
+        filename = f"MailMerge_Letter{lt}_{safe_site}_{safe_fy}.xlsm"
+        try:
+            file_path = out_dir / filename
+            count = doc_service.generate_mailmerge_xlsm(site_emps, cycle, lt, file_path)
+            if count == 0:
+                continue
             generated.append(GeneratedFile(
                 cycle_id=cycle_id,
                 site=decoded_site,

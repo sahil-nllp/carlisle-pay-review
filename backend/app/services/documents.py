@@ -84,7 +84,9 @@ def _build_letter_doc(
     first_name = emp.first_name or "[First Name]"
     current_rate = float(emp.current_rate) if emp.current_rate else 0.0
     proposed_rate = float(emp.proposed_rate) if emp.proposed_rate else 0.0
-    award_level = emp.current_award or ""
+    # Letter A: level is unchanged, so state the current classification.
+    # Letters B/C: the letter is proposing a NEW level — state that one, not the old one.
+    award_level = (emp.current_award or "") if letter_type == "A" else (emp.proposed_award or emp.current_award or "")
 
     doc = Document()
 
@@ -246,7 +248,9 @@ def _build_letter_pdf(
     first_name    = emp.first_name or "[First Name]"
     current_rate  = float(emp.current_rate)  if emp.current_rate  else 0.0
     proposed_rate = float(emp.proposed_rate) if emp.proposed_rate else 0.0
-    award_level   = emp.current_award or ""
+    # Letter A: level is unchanged, so state the current classification.
+    # Letters B/C: the letter is proposing a NEW level — state that one, not the old one.
+    award_level   = (emp.current_award or "") if letter_type == "A" else (emp.proposed_award or emp.current_award or "")
 
     pdf = FPDF(orientation="P", unit="mm", format="A4")
     pdf.set_auto_page_break(auto=True, margin=18)
@@ -716,3 +720,215 @@ def generate_regional_excel(
 
     wb.save(str(out_path))
     return len(active)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  4. Legacy mail-merge .xlsm (Data/Letter/Other tabs + VBA macros)
+# ─────────────────────────────────────────────────────────────────────────────
+# Bundled templates carried over from last year's manual process. Each has a
+# "Data" sheet (per-employee rows), a "Letter" sheet (single-letter view driven
+# by VLOOKUP against Data!J1), and an "Other" sheet (email subject/body). Two
+# macros do the work: CreatePDF() batch-exports a PDF per employee, then calls
+# Send_Files() which sends each PDF to the matching employee via Outlook.
+_LETTER_TEMPLATES: dict[str, Path] = {
+    "A": Path(__file__).resolve().parent.parent / "assets" / "letter_templates" / "letter_a.xlsm",
+    "B": Path(__file__).resolve().parent.parent / "assets" / "letter_templates" / "letter_b.xlsm",
+    "C": Path(__file__).resolve().parent.parent / "assets" / "letter_templates" / "letter_c.xlsm",
+}
+
+
+def generate_mailmerge_xlsm(
+    employees: list["Employee"],
+    cycle: "ReviewCycle",
+    letter_type: str,
+    out_path: Path,
+) -> int:
+    """Fill the legacy mail-merge template's Data sheet with this site's
+    current employees for the given letter type, preserving the Letter/Other
+    sheets and VBA macros untouched. Returns the number of rows written (0 if
+    no employee in this site currently has this letter type assigned).
+    """
+    import openpyxl
+
+    MIN_INCREASE = 0.10  # skip trivial Letter A rate bumps, matching generate_letters_zip
+
+    rows: list["Employee"] = []
+    for emp in employees:
+        if emp.is_departed or emp.is_excluded:
+            continue
+        if (emp.letter_type or "").upper().strip() != letter_type:
+            continue
+        if letter_type == "A":
+            cr = float(emp.current_rate or 0)
+            pr = float(emp.proposed_rate or 0)
+            if pr > 0 and cr > 0 and 0 < (pr - cr) < MIN_INCREASE:
+                continue
+        rows.append(emp)
+
+    if not rows:
+        return 0
+
+    wb = openpyxl.load_workbook(_LETTER_TEMPLATES[letter_type], keep_vba=True)
+    ws = wb["Data"]
+
+    # Wipe last year's sample rows (real employee data — must not leak into this year's file)
+    if ws.max_row >= 2:
+        ws.delete_rows(2, ws.max_row - 1)
+
+    # "Email From" note — restored after delete_rows wiped row 5
+    ws["M5"] = "Email From:"
+    ws["N5"] = cycle.hr_email or "peopleandculture@carlislehealth.com.au"
+
+    # The local export folder from last year is meaningless on a new machine —
+    # replace with an explicit placeholder rather than a stale/broken path.
+    ws["K1"] = "PASTE A FOLDER PATH HERE BEFORE RUNNING CreatePDF (e.g. C:\\Users\\you\\Desktop\\Letters)"
+
+    for i, emp in enumerate(rows, start=2):
+        # Letter A: level unchanged, show current. Letters B/C: show the proposed new level.
+        award_level = (
+            (emp.current_award or "")
+            if letter_type == "A"
+            else (emp.proposed_award or emp.current_award or "")
+        )
+        ws.cell(i, 1, emp.emp_num)
+        ws.cell(i, 2, emp.first_name)
+        ws.cell(i, 3, emp.last_name)
+        if letter_type != "C":  # Letter C is award-only — no pay change to show
+            cr_cell = ws.cell(i, 4, float(emp.current_rate) if emp.current_rate is not None else None)
+            pr_cell = ws.cell(i, 5, float(emp.proposed_rate) if emp.proposed_rate is not None else None)
+            cr_cell.number_format = '"$"#,##0.00'
+            pr_cell.number_format = '"$"#,##0.00'
+            pct_cell = ws.cell(i, 7, f"=(E{i}-D{i})/D{i}")
+            pct_cell.number_format = "0.0%"
+        ws.cell(i, 6, emp.email or "")
+        ws.cell(i, 8, award_level)
+
+    # Pre-fill the Letter tab's lookup key so opening the file shows a filled letter
+    wb["Letter"]["J1"] = rows[0].emp_num
+
+    _sync_mailmerge_letter_text(wb["Letter"], letter_type, cycle)
+    _embed_mailmerge_signature(wb["Letter"], cycle)
+
+    wb.save(str(out_path))
+    return len(rows)
+
+
+def _embed_mailmerge_signature(ws, cycle: "ReviewCycle") -> None:
+    """Embed the cycle's signature image into the Letter sheet, between
+    "Yours Sincerely" (A28) and the typed name/title/company (A32) — matching
+    where the PDF/DOCX builders place it. Silently skipped if no signature is
+    on file; never lets a signature problem break the whole export.
+    """
+    sig_path = getattr(cycle, "signature_path", None)
+    if not sig_path:
+        return
+    p = Path(sig_path)
+    if not p.exists():
+        return
+    try:
+        from openpyxl.drawing.image import Image as XLImage
+        from PIL import Image as PILImage
+
+        with PILImage.open(p) as im:
+            src_w, src_h = im.size
+
+        target_h = 60  # px — roughly matches the 16mm height used in the PDF
+        target_w = int(src_w * (target_h / src_h)) if src_h else target_h * 3
+
+        img = XLImage(str(p))
+        img.height = target_h
+        img.width = target_w
+        ws.add_image(img, "A30")
+    except Exception:
+        pass
+
+
+def _sync_mailmerge_letter_text(ws, letter_type: str, cycle: "ReviewCycle") -> None:
+    """Rewrite the Letter sheet's static paragraph text so it matches the
+    current, corrected wording used by generate_letters_zip/the PDF builder —
+    otherwise the mail-merge letters would still read last year's frozen text
+    (stale dates, the removed superannuation paragraph, a wrong "will take be
+    reflected" typo, and TEXT(K4,"###") formulas that error on a text award
+    level). Only the paragraph text changes; the VLOOKUP cells (K1-K4) and
+    every macro are left untouched.
+    """
+    fy_label = cycle.fy_label or ""
+    fy_parts = fy_label.replace("FY", "").split("-")
+    fy_current = f"{fy_parts[0]}-{fy_parts[1]}" if len(fy_parts) == 2 else fy_label
+
+    effective_text = f"from {_fmt_date(cycle.effective_date)}"
+    consultation_dl = (
+        _fmt_date(cycle.consultation_deadline)
+        if hasattr(cycle, "consultation_deadline") and cycle.consultation_deadline
+        else "COB 28 days from letter date"
+    )
+    hr_email = cycle.hr_email or "peopleandculture@carlislehealth.com.au"
+    signatory_name = cycle.signatory_name or "General Manager, Operations"
+    signatory_title = cycle.signatory_title or ""
+    signatory_company = cycle.signatory_company or "Carlisle Health"
+
+    intro = (
+        f"In recognition of changes in Award rates and as per Carlisle Pay & Progression model "
+        f"for {fy_current} and your continued commitment to the Carlisle Health Group, this letter "
+        f"is to confirm the business will be increasing your remuneration."
+    )
+    thanks = (
+        "On behalf of the Carlisle Health Management Team and Board, we would like to thank you "
+        "for your ongoing contribution.\n\nYours Sincerely"
+    )
+
+    if letter_type == "A":
+        ws["A16"] = intro
+        ws["A18"] = (
+            '="Your Hourly Rate per your contract will be increased from "&TEXT(K2,"$#,###.00")'
+            '&" per hour to "&TEXT(K3,"$#,###.00")&" per hour (exclusive of superannuation). '
+            'Your level under the Award is: "&K4&""'
+        )
+        ws["A20"] = (
+            f"This change will be reflected in your pay {effective_text}, "
+            f"i.e. the first full pay period of the new financial year."
+        )
+        ws["A22"] = None  # was the superannuation paragraph — removed
+        ws["A26"] = f"If you are unclear on anything contained in this correspondence, please contact HR on {hr_email}."
+        ws["A28"] = thanks
+
+    elif letter_type == "B":
+        ws["A16"] = intro
+        ws["A18"] = (
+            '="Your Hourly Rate per your contract will be increased from "&TEXT(K2,"$#,###.00")'
+            '&" per hour to "&TEXT(K3,"$#,###.00")&" per hour (exclusive of superannuation). '
+            f'This change will be reflected in your pay {effective_text}, i.e. the first full pay period '
+            'of the new financial year."'
+        )
+        ws["A20"] = (
+            '="We have simultaneously undertaken a review of all Award levels across the business to ensure '
+            'that the expectations of your role aligned to the most appropriate Award level. As a result of '
+            'this process Carlisle proposes to align your Award level to: "&K4&""'
+        )
+        ws["A22"] = (
+            f"With this, we are asking for any feedback on the proposed Award level update to be sent to "
+            f"Carlisle HR at {hr_email} by {consultation_dl}. If you do not have any feedback, "
+            f"your Award level will be updated."
+        )
+        ws["A24"] = None  # was the superannuation paragraph — removed
+        ws["A28"] = thanks
+
+    elif letter_type == "C":
+        ws["A16"] = (
+            '="Carlisle has conducted a review of all Award levels across the business to ensure that the '
+            'expectations of your role aligned to the most appropriate Award level. As a result of this '
+            'process Carlisle proposes to align your Award level to: "&K4&""'
+        )
+        ws["A18"] = (
+            f"As part of this proposed change, we are asking for any feedback on this to be sent to "
+            f"Carlisle HR at {hr_email} by {consultation_dl} ('the consultation period'). Please take "
+            f"note that the proposed alignment of your Award level does not impact your current payrate."
+        )
+        ws["A20"] = "If you do not have any feedback, your Award level will be updated to the above."
+        ws["A22"] = None  # was the superannuation paragraph — removed
+        ws["A26"] = f"If you are unclear on anything contained in this correspondence, please contact HR on {hr_email}."
+        ws["A28"] = thanks  # original template lacked this closing paragraph — added for consistency with A/B
+
+    ws["A32"] = signatory_name
+    ws["A33"] = signatory_title or None
+    ws["A34"] = signatory_company

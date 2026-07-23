@@ -186,8 +186,19 @@ export default function DownloadsClient({ cycleId, bySite }: Props) {
                       <FileIcon type={f.file_type} color={fileTypeColor(f.file_type).color} />
                     </div>
                     <div>
-                      <div className="text-sm font-semibold" style={{ color: "var(--neutral-900)" }}>
-                        {f.label}
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-semibold" style={{ color: "var(--neutral-900)" }}>
+                          {f.label}
+                        </span>
+                        {MAILMERGE_TYPES.has(f.file_type) && (
+                          <span
+                            className="rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide"
+                            style={{ background: "#fff7ed", color: "#c2410c", border: "1px solid #fed7aa" }}
+                            title="Contains VBA macros: CreatePDF() batch-exports letters, Send_Files() emails them via Outlook automatically — enable macro content in Excel to use, and set the folder path before running."
+                          >
+                            Macro-enabled
+                          </span>
+                        )}
                       </div>
                       <div
                         className="mt-0.5 flex items-center gap-2 text-xs"
@@ -234,11 +245,16 @@ export default function DownloadsClient({ cycleId, bySite }: Props) {
 
 // ─────────────────────────────────────────────────────────────────────────────
 
+const MAILMERGE_TYPES = new Set(["mailmerge_a", "mailmerge_b", "mailmerge_c"]);
+
 function fileTypeColor(type: string): { bg: string; color: string } {
   const map: Record<string, { bg: string; color: string }> = {
     letters_zip:    { bg: "var(--blue-50)",    color: "var(--blue-700)"   },
     ukg_upload:     { bg: "var(--violet-100)", color: "var(--violet-700)" },
     regional_excel: { bg: "var(--green-50)",   color: "var(--green-700)"  },
+    mailmerge_a:    { bg: "#fff7ed",           color: "#c2410c"           },
+    mailmerge_b:    { bg: "#fff7ed",           color: "#c2410c"           },
+    mailmerge_c:    { bg: "#fff7ed",           color: "#c2410c"           },
   };
   return map[type] ?? { bg: "var(--neutral-100)", color: "var(--neutral-600)" };
 }
@@ -265,6 +281,15 @@ function FileIcon({ type, color }: { type: string; color: string }) {
       <svg width="16" height="16" viewBox="0 0 15 15" fill="none">
         <rect x="1" y="1" width="13" height="13" rx="1.5" stroke={color} strokeWidth="1.25"/>
         <path d="M1 5h13M5 5v9M5 1v4" stroke={color} strokeWidth="1.25"/>
+      </svg>
+    );
+  }
+  if (MAILMERGE_TYPES.has(type)) {
+    return (
+      <svg width="16" height="16" viewBox="0 0 15 15" fill="none">
+        <rect x="1" y="1" width="13" height="13" rx="1.5" stroke={color} strokeWidth="1.25"/>
+        <path d="M1 5h13" stroke={color} strokeWidth="1.25"/>
+        <path d="M4.5 8l1.5 1.5L9.5 6" stroke={color} strokeWidth="1.25" strokeLinecap="round" strokeLinejoin="round"/>
       </svg>
     );
   }

@@ -26,12 +26,18 @@ FILE_TYPE_LABELS = {
     "letters_zip":     "Pay Letters (ZIP)",
     "ukg_upload":      "UKG Payroll Upload",
     "regional_excel":  "Regional Summary Excel",
+    "mailmerge_a":     "Mail-Merge Template (Letter A)",
+    "mailmerge_b":     "Mail-Merge Template (Letter B)",
+    "mailmerge_c":     "Mail-Merge Template (Letter C)",
 }
 
 MIME_TYPES = {
     "letters_zip":    "application/zip",
     "ukg_upload":     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     "regional_excel": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "mailmerge_a":    "application/vnd.ms-excel.sheet.macroEnabled.12",
+    "mailmerge_b":    "application/vnd.ms-excel.sheet.macroEnabled.12",
+    "mailmerge_c":    "application/vnd.ms-excel.sheet.macroEnabled.12",
 }
 
 
