@@ -59,3 +59,15 @@ export async function regenerateSiteFiles(
     { method: "POST" },
   );
 }
+
+/** Reverse an "approved" decision back to pending — clears the generated
+ * output files, since they no longer reflect an approved state. */
+export async function undoApproval(
+  cycleId: number,
+  site: string,
+): Promise<{ site: string; status: "pending" }> {
+  return api<{ site: string; status: "pending" }>(
+    `/api/v1/cycles/${cycleId}/sites/${encodeURIComponent(site)}/undo-approval`,
+    { method: "POST" },
+  );
+}

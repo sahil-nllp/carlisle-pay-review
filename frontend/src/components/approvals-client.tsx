@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import React, { useCallback, useState, useTransition } from "react";
 
 import { ApiError } from "@/lib/api";
-import { decideSite, type ApprovalDetail } from "@/lib/approvals";
+import { decideSite, undoApproval, type ApprovalDetail } from "@/lib/approvals";
 import {
   downloadDraftLetter,
   getAwardRates,
@@ -141,6 +141,22 @@ export function ApprovalsClient({
   function handleApprove(site: string) { handleDecide(site, "approve"); }
   function handleReject(site: string)  { handleDecide(site, "request_changes"); }
 
+  function handleUndo(site: string) {
+    const ds = getDs(site);
+    setDs(site, { pending: true, error: null });
+    startTransition(async () => {
+      try {
+        await undoApproval(cycleId, site);
+        // Undone site goes back to "pending" — move it back to Awaiting decision
+        setApprovals((prev) => prev.map((a) => a.site === site ? { ...a, status: "pending" } : a));
+        setDs(site, { pending: false, comment: "" });
+        router.refresh();
+      } catch (err) {
+        setDs(site, { pending: false, error: err instanceof ApiError ? err.message : "Undo failed" });
+      }
+    });
+  }
+
   const pending  = approvals.filter((a) => a.status === "pending");
   const decided  = approvals.filter((a) => a.status !== "pending");
   const approved = approvals.filter((a) => a.status === "approved").length;
@@ -178,6 +194,7 @@ export function ApprovalsClient({
                 onCommentChange={(v) => setDs(a.site, { comment: v })}
                 onApprove={() => handleApprove(a.site)}
                 onReject={() => handleReject(a.site)}
+                onUndo={() => handleUndo(a.site)}
               />
             ))}
           </div>
@@ -199,6 +216,7 @@ export function ApprovalsClient({
                 onCommentChange={(v) => setDs(a.site, { comment: v })}
                 onApprove={() => {}}
                 onReject={() => {}}
+                onUndo={() => handleUndo(a.site)}
               />
             ))}
           </div>
@@ -215,7 +233,7 @@ const TABLE_COL_COUNT = 13; // Emp#, Name, Age, Status, Current Award, Proposed 
 
 function ApprovalCard({
   approval: a, cycleId, cycleLabel, cpiRate, ds,
-  onCommentChange, onApprove, onReject,
+  onCommentChange, onApprove, onReject, onUndo,
 }: {
   approval: ApprovalDetail;
   cycleId: number;
@@ -225,6 +243,7 @@ function ApprovalCard({
   onCommentChange: (v: string) => void;
   onApprove: () => void;
   onReject: () => void;
+  onUndo: () => void;
 }) {
   const [expanded, setExpanded]           = useState(false);
   const [employees, setEmployees]         = useState<EmployeeWithCompliance[] | null>(null);
@@ -237,6 +256,7 @@ function ApprovalCard({
   const [loadErr, setLoadErr]             = useState<string | null>(null);
   const [showRejectConfirm, setShowRejectConfirm] = useState(false);
   const [showApproveConfirm, setShowApproveConfirm] = useState(false);
+  const [showUndoConfirm, setShowUndoConfirm] = useState(false);
 
   const payrollDelta = a.payroll_proposed - a.payroll_current;
 
@@ -666,13 +686,62 @@ function ApprovalCard({
         </div>
       </div>}
 
-      {/* Decided summary — show who decided and when */}
-      {a.status !== "pending" && (a.decided_by || a.decision_notes) && (
-        <div className="px-5 py-3 text-xs" style={{ borderTop: "1px solid var(--neutral-100)", color: "var(--neutral-500)" }}>
-          {a.decided_by && <span className="font-medium" style={{ color: "var(--neutral-700)" }}>{a.decided_by}</span>}
-          {a.decided_at && <span className="ml-1">{formatDate(a.decided_at)}</span>}
-          {a.decision_notes && <span className="ml-2 italic">— "{a.decision_notes}"</span>}
+      {/* Decided summary — show who decided and when, with an Undo option */}
+      {a.status !== "pending" && (a.decided_by || a.decision_notes || a.status === "approved") && (
+        <div className="flex items-center justify-between gap-3 px-5 py-3 text-xs" style={{ borderTop: "1px solid var(--neutral-100)", color: "var(--neutral-500)" }}>
+          <div>
+            {a.decided_by && <span className="font-medium" style={{ color: "var(--neutral-700)" }}>{a.decided_by}</span>}
+            {a.decided_at && <span className="ml-1">{formatDate(a.decided_at)}</span>}
+            {a.decision_notes && <span className="ml-2 italic">— "{a.decision_notes}"</span>}
+          </div>
+
+          {a.status === "approved" && (
+            !showUndoConfirm ? (
+              <button
+                onClick={() => setShowUndoConfirm(true)}
+                disabled={ds.pending}
+                className="shrink-0 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors"
+                style={{
+                  background: "var(--neutral-50)",
+                  color: "var(--neutral-600)",
+                  border: "1px solid var(--neutral-200)",
+                  cursor: ds.pending ? "not-allowed" : "pointer",
+                  opacity: ds.pending ? 0.5 : 1,
+                }}
+                title="Reverse this approval — sends the site back to pending and removes the generated payroll files"
+              >
+                ↺ Undo approval
+              </button>
+            ) : (
+              <div
+                className="flex shrink-0 items-center gap-2 rounded-lg px-3 py-2"
+                style={{ background: "#fffbeb", border: "1px solid #fde68a" }}
+              >
+                <span className="text-xs font-semibold" style={{ color: "#92400e" }}>
+                  Undo? This removes the generated payroll files.
+                </span>
+                <button
+                  onClick={() => { setShowUndoConfirm(false); onUndo(); }}
+                  disabled={ds.pending}
+                  className="rounded px-3 py-1 text-xs font-bold"
+                  style={{ background: "#b45309", color: "white", opacity: ds.pending ? 0.5 : 1 }}
+                >
+                  Yes, undo
+                </button>
+                <button
+                  onClick={() => setShowUndoConfirm(false)}
+                  className="rounded px-3 py-1 text-xs font-semibold"
+                  style={{ background: "var(--neutral-100)", color: "var(--neutral-700)" }}
+                >
+                  Cancel
+                </button>
+              </div>
+            )
+          )}
         </div>
+      )}
+      {ds.error && a.status !== "pending" && (
+        <div className="px-5 pb-3 text-xs font-medium" style={{ color: "var(--red-600)" }}>{ds.error}</div>
       )}
     </div>
   );

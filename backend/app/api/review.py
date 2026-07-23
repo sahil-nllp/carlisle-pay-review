@@ -891,6 +891,83 @@ async def decide_site(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+#  Undo an approval decision (senior management) — sends the site back to
+#  "pending" so it can be re-decided, and clears the approval-triggered
+#  output files since they no longer represent a valid approved state.
+# ─────────────────────────────────────────────────────────────────────────────
+@router.post(
+    "/cycles/{cycle_id}/sites/{site}/undo-approval",
+    dependencies=[
+        Depends(
+            require_roles(
+                UserRole.HR_ADMIN.value,
+                UserRole.SENIOR_MANAGEMENT.value,
+            )
+        )
+    ],
+)
+async def undo_approval(
+    cycle_id: int,
+    site: str,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> dict:
+    decoded_site = unquote(site)
+    await _get_cycle_or_404(db, cycle_id)
+
+    appr = await _get_approval(db, cycle_id, decoded_site)
+    if not appr or appr.status != ApprovalStatus.APPROVED.value:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "Site is not currently approved — nothing to undo",
+        )
+
+    prev_decided_by_id = appr.decided_by_id
+    prev_decision_notes = appr.decision_notes
+
+    appr.status = ApprovalStatus.PENDING.value
+    appr.decided_by_id = None
+    appr.decided_at = None
+    appr.decision_notes = None
+
+    # Remove the files generated on approval — they no longer reflect an
+    # approved state. Delete both the DB records and the files on disk.
+    from pathlib import Path as _Path
+
+    stmt = select(GeneratedFile).where(
+        GeneratedFile.cycle_id == cycle_id,
+        func.lower(GeneratedFile.site) == decoded_site.lower(),
+    )
+    stale_files = (await db.execute(stmt)).scalars().all()
+    for gf in stale_files:
+        if gf.file_path:
+            _Path(gf.file_path).unlink(missing_ok=True)
+    await db.execute(
+        sql_delete(GeneratedFile).where(
+            GeneratedFile.cycle_id == cycle_id,
+            func.lower(GeneratedFile.site) == decoded_site.lower(),
+        )
+    )
+
+    db.add(
+        AuditLog(
+            user_id=user.id,
+            action="undo_approval",
+            entity_type="approval",
+            entity_id=appr.id,
+            detail={
+                "site": decoded_site,
+                "previous_decided_by_id": prev_decided_by_id,
+                "previous_decision_notes": prev_decision_notes,
+            },
+        )
+    )
+    await db.commit()
+
+    return {"site": decoded_site, "status": appr.status}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 #  Regenerate output files for an already-approved site
 # ─────────────────────────────────────────────────────────────────────────────
 
