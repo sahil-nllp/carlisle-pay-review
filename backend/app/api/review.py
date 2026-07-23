@@ -1185,7 +1185,7 @@ async def get_draft_letter(
 
     import re as _re
     safe = lambda t: _re.sub(r'[\\/*?:"<>|]', "_", str(t or "unknown")).strip()
-    filename = f"DRAFT_{safe(emp.last_name)}_{safe(emp.first_name)}_Letter{letter_type}.pdf"
+    filename = f"DRAFT_{safe(emp.last_name)}_{safe(emp.first_name)}.pdf"
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
@@ -1254,7 +1254,7 @@ async def get_draft_letters_zip(
             except Exception as exc:
                 print(f"[draft-pdf] skipping emp {emp.id}: {exc}")
                 continue
-            fname = f"DRAFT_{safe(emp.last_name)}_{safe(emp.first_name)}_Letter{lt}.pdf"
+            fname = f"DRAFT_{safe(emp.last_name)}_{safe(emp.first_name)}.pdf"
             zf.writestr(fname, pdf_bytes)
             count += 1
 

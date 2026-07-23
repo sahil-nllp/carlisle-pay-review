@@ -1,0 +1,5 @@
+Collecting numpy
+  Using cached numpy-2.5.1-cp313-cp313-win_amd64.whl.metadata (6.6 kB)
+Using cached numpy-2.5.1-cp313-cp313-win_amd64.whl (12.4 MB)
+Installing collected packages: numpy
+Successfully installed numpy-2.5.1

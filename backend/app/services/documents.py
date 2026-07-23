@@ -474,7 +474,7 @@ def generate_letters_zip(
 
             pdf_bytes = _build_letter_pdf(lt, emp, cycle, draft=draft)
             prefix = "DRAFT_" if draft else ""
-            fname = f"{prefix}{_safe(emp.last_name)}_{_safe(emp.first_name)}_Letter{lt}.pdf"
+            fname = f"{prefix}{_safe(emp.last_name)}_{_safe(emp.first_name)}.pdf"
             zf.writestr(f"Letter {lt}/{fname}", pdf_bytes)
             count += 1
 

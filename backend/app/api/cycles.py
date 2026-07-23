@@ -223,43 +223,48 @@ async def upload_signature(
 
 
 def _process_signature(data: bytes) -> bytes:
-    """Remove background from a signature image.
+    """Remove background from a signature image, keeping ink strokes crisp.
 
-    Strategy:
-      1. Convert to greyscale
-      2. Blur to smooth out paper grain/texture
-      3. Threshold: pixels lighter than ~140 → transparent, darker → black ink
+    Adaptive-threshold approach:
+      1. Convert to greyscale (the ORIGINAL, never blurred).
+      2. Estimate local paper brightness with a wide blur (radius far bigger
+         than a pen stroke), so it captures shading/vignette but not the ink.
+      3. Alpha comes from how much darker each pixel is than its local paper
+         estimate — computed straight off the sharp original pixel, never off
+         a blurred copy, so stroke edges stay sharp instead of feathering out.
     """
     import io
+
+    import numpy as np
     from PIL import Image, ImageFilter
 
-    img = Image.open(io.BytesIO(data)).convert("L")   # greyscale
+    img = Image.open(io.BytesIO(data)).convert("L")
 
-    # Blur used ONLY for background/ink decision — kills grain
-    # The original sharp pixels drive the actual output
-    blurred = img.filter(ImageFilter.GaussianBlur(radius=3))
+    # Median filter kills single-pixel sensor/paper grain WITHOUT softening
+    # real stroke edges (edge-preserving, unlike Gaussian blur) — strokes are
+    # several pixels wide, grain is ~1px, so this only removes the latter.
+    denoised = img.filter(ImageFilter.MedianFilter(size=3))
+    arr = np.asarray(denoised, dtype=np.float32)
 
-    out_img = Image.new("RGBA", img.size)
-    orig = img.load()       # sharp original — used for ink sharpness
-    mask = blurred.load()   # blurred — used for threshold decision only
-    dst = out_img.load()
-    w, h = img.size
+    # Wide blur = local paper/background estimate, not the strokes themselves
+    background = np.asarray(
+        denoised.filter(ImageFilter.GaussianBlur(radius=25)), dtype=np.float32
+    )
 
-    THRESHOLD = 170
+    # How much darker than its local background each (sharp) pixel is
+    darkness = np.clip(background - arr, 0.0, None)
 
-    for y in range(h):
-        for x in range(w):
-            decision = mask[x, y]     # blurred brightness → is this ink or paper?
-            if decision >= THRESHOLD:
-                dst[x, y] = (255, 255, 255, 0)           # transparent
-            else:
-                # Alpha from blurred (smooth edges), colour from original (sharp)
-                ratio = 1 - (decision / THRESHOLD)
-                alpha = int(255 * (ratio ** 0.5))
-                dst[x, y] = (0, 0, 0, min(255, alpha))
+    # Steep ramp → most of a stroke is fully opaque, only true edge pixels
+    # get partial alpha (natural anti-aliasing, not blur-induced softness)
+    SCALE = 6.0
+    alpha = np.clip(darkness * SCALE, 0, 255)
+    alpha = np.where(alpha < 25, 0, alpha).astype(np.uint8)  # drop faint speckle
+
+    out = np.zeros((*arr.shape, 4), dtype=np.uint8)
+    out[..., 3] = alpha  # RGB channels stay 0 → solid black ink
 
     buf = io.BytesIO()
-    out_img.save(buf, format="PNG")
+    Image.fromarray(out, mode="RGBA").save(buf, format="PNG")
     return buf.getvalue()
 
 
