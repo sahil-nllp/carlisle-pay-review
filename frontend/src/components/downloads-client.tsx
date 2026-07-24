@@ -3,7 +3,7 @@
 import { useState } from "react";
 
 import type { DownloadFile } from "@/lib/downloads.server";
-import { regenerateSiteFiles } from "@/lib/approvals";
+import { downloadMailmergeAllSites, regenerateAllFiles, regenerateSiteFiles } from "@/lib/approvals";
 
 interface Props {
   cycleId: number;
@@ -14,6 +14,13 @@ export default function DownloadsClient({ cycleId, bySite }: Props) {
   const [regenerating, setRegenerating] = useState<string | null>(null);
   const [regenDone, setRegenDone] = useState<Set<string>>(new Set());
   const [regenError, setRegenError] = useState<Record<string, string>>({});
+
+  const [isRegeneratingAll, setIsRegeneratingAll] = useState(false);
+  const [regenAllDone, setRegenAllDone] = useState(false);
+  const [regenAllError, setRegenAllError] = useState<string | null>(null);
+
+  const [downloadingType, setDownloadingType] = useState<"A" | "B" | "C" | null>(null);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
 
   // After regeneration the page data is stale — reload to pick up the new file records
   async function handleRegenerate(site: string) {
@@ -37,39 +44,119 @@ export default function DownloadsClient({ cycleId, bySite }: Props) {
     }
   }
 
+  async function handleRegenerateAll() {
+    setIsRegeneratingAll(true);
+    setRegenAllError(null);
+    try {
+      await regenerateAllFiles(cycleId);
+      setRegenAllDone(true);
+      setTimeout(() => {
+        window.location.reload();
+      }, 800);
+    } catch (err) {
+      setRegenAllError(err instanceof Error ? err.message : String(err));
+      setIsRegeneratingAll(false);
+    }
+  }
+
+  async function handleDownloadAllSites(letterType: "A" | "B" | "C") {
+    setDownloadingType(letterType);
+    setDownloadError(null);
+    try {
+      await downloadMailmergeAllSites(cycleId, letterType);
+    } catch (err) {
+      setDownloadError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setDownloadingType(null);
+    }
+  }
+
   const entries = Object.entries(bySite).sort(([a], [b]) => a.localeCompare(b));
+
+  const allSitesToolbar = (
+    <div
+      className="flex flex-wrap items-center justify-between gap-3 rounded-xl p-4"
+      style={{ background: "white", border: "1px solid var(--border)", boxShadow: "0 1px 3px rgba(15,15,15,0.04)" }}
+    >
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="mr-1 text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--neutral-500)" }}>
+          All sites — mail-merge macro:
+        </span>
+        {(["A", "B", "C"] as const).map((lt) => (
+          <button
+            key={lt}
+            onClick={() => handleDownloadAllSites(lt)}
+            disabled={downloadingType !== null}
+            className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold disabled:opacity-60"
+            style={{
+              background: "#fff7ed", color: "#c2410c", border: "1px solid #fed7aa",
+              cursor: downloadingType !== null ? "not-allowed" : "pointer",
+            }}
+            title={`Combined mail-merge macro workbook (.xlsm) — Letter ${lt} for every approved site's employees. Contains VBA macros (CreatePDF / Send_Files) — enable macro content in Excel to use.`}
+          >
+            {downloadingType === lt ? "Preparing…" : `⬇ Macro ${lt}`}
+          </button>
+        ))}
+      </div>
+
+      <button
+        onClick={handleRegenerateAll}
+        disabled={isRegeneratingAll || regenAllDone}
+        className="flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-xs font-semibold disabled:opacity-60"
+        style={{
+          background: regenAllDone ? "var(--green-50)" : "var(--neutral-100)",
+          color: regenAllDone ? "var(--green-700)" : "var(--neutral-600)",
+          border: `1px solid ${regenAllDone ? "var(--green-200)" : "var(--neutral-200)"}`,
+          cursor: isRegeneratingAll || regenAllDone ? "not-allowed" : "pointer",
+        }}
+        title="Re-generate all output files for every currently-approved site"
+      >
+        {regenAllDone ? "✓ Regenerated" : isRegeneratingAll ? "Regenerating…" : "⟳ Regenerate all"}
+      </button>
+
+      {(downloadError || regenAllError) && (
+        <p className="w-full text-xs font-medium" style={{ color: "var(--red-600)" }}>
+          {downloadError ?? regenAllError}
+        </p>
+      )}
+    </div>
+  );
 
   if (entries.length === 0) {
     return (
-      <div
-        className="rounded-xl p-12 text-center"
-        style={{
-          background: "white",
-          border: "1px solid var(--border)",
-          boxShadow: "0 1px 3px rgba(15,15,15,0.04)",
-        }}
-      >
+      <div className="space-y-5">
+        {allSitesToolbar}
         <div
-          className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full"
-          style={{ background: "var(--neutral-100)" }}
+          className="rounded-xl p-12 text-center"
+          style={{
+            background: "white",
+            border: "1px solid var(--border)",
+            boxShadow: "0 1px 3px rgba(15,15,15,0.04)",
+          }}
         >
-          <svg width="20" height="20" viewBox="0 0 15 15" fill="none">
-            <path d="M7.5 1.5v8M4.5 7l3 3 3-3" stroke="var(--neutral-400)" strokeWidth="1.25" strokeLinecap="round" strokeLinejoin="round"/>
-            <path d="M2 11.5v1a1 1 0 001 1h9a1 1 0 001-1v-1" stroke="var(--neutral-400)" strokeWidth="1.25" strokeLinecap="round"/>
-          </svg>
+          <div
+            className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full"
+            style={{ background: "var(--neutral-100)" }}
+          >
+            <svg width="20" height="20" viewBox="0 0 15 15" fill="none">
+              <path d="M7.5 1.5v8M4.5 7l3 3 3-3" stroke="var(--neutral-400)" strokeWidth="1.25" strokeLinecap="round" strokeLinejoin="round"/>
+              <path d="M2 11.5v1a1 1 0 001 1h9a1 1 0 001-1v-1" stroke="var(--neutral-400)" strokeWidth="1.25" strokeLinecap="round"/>
+            </svg>
+          </div>
+          <p className="text-sm font-semibold" style={{ color: "var(--neutral-700)" }}>
+            No files generated yet
+          </p>
+          <p className="mt-1 text-xs" style={{ color: "var(--neutral-500)" }}>
+            Files are generated automatically when a site is approved.
+          </p>
         </div>
-        <p className="text-sm font-semibold" style={{ color: "var(--neutral-700)" }}>
-          No files generated yet
-        </p>
-        <p className="mt-1 text-xs" style={{ color: "var(--neutral-500)" }}>
-          Files are generated automatically when a site is approved.
-        </p>
       </div>
     );
   }
 
   return (
     <div className="space-y-5">
+      {allSitesToolbar}
       {entries.map(([site, siteFiles]) => {
         const isRegenerating = regenerating === site;
         const isDone = regenDone.has(site);

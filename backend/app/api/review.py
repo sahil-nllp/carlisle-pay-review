@@ -92,6 +92,63 @@ async def _get_or_create_approval(
     return appr
 
 
+async def _generate_all_site_files(
+    cycle: ReviewCycle,
+    site: str,
+    site_emps: list[Employee],
+    user_id: int,
+) -> list[GeneratedFile]:
+    """Generate the full output-file set for one site: Pay Letters zip, UKG
+    upload, Regional Excel, and one legacy mail-merge .xlsm per letter type
+    (only for types that actually have a matching employee). Returns
+    GeneratedFile rows to add to the session — caller commits.
+    """
+    import re as _re
+
+    out_dir = storage.outputs_dir(cycle.id, site)
+    safe_site = _re.sub(r'[\\/*?:"<>|]', "_", site)
+    safe_fy = cycle.fy_label.replace("/", "-")
+    generated: list[GeneratedFile] = []
+
+    for file_type, filename, generator in [
+        ("letters_zip",    f"PayLetters_{safe_site}_{safe_fy}.zip",     lambda p: doc_service.generate_letters_zip(site_emps, cycle, p)),
+        ("ukg_upload",     f"UKG_Payroll_{safe_site}_{safe_fy}.xlsx",   lambda p: doc_service.generate_ukg_upload(site_emps, cycle, p)),
+        ("regional_excel", f"ApprovedRates_{safe_site}_{safe_fy}.xlsx", lambda p: doc_service.generate_regional_excel(site_emps, cycle, site, p)),
+    ]:
+        try:
+            file_path = out_dir / filename
+            generator(file_path)
+            generated.append(GeneratedFile(
+                cycle_id=cycle.id, site=site,
+                file_type=file_type, filename=filename,
+                file_path=str(file_path),
+                file_size=file_path.stat().st_size if file_path.exists() else None,
+                generated_by_id=user_id,
+            ))
+        except Exception as exc:
+            print(f"[documents] {file_type} failed for {site}: {exc}")
+
+    for lt in ("A", "B", "C"):
+        file_type = f"mailmerge_{lt.lower()}"
+        filename = f"MailMerge_Letter{lt}_{safe_site}_{safe_fy}.xlsm"
+        try:
+            file_path = out_dir / filename
+            count = doc_service.generate_mailmerge_xlsm(site_emps, cycle, lt, file_path)
+            if count == 0:
+                continue
+            generated.append(GeneratedFile(
+                cycle_id=cycle.id, site=site,
+                file_type=file_type, filename=filename,
+                file_path=str(file_path),
+                file_size=file_path.stat().st_size if file_path.exists() else None,
+                generated_by_id=user_id,
+            ))
+        except Exception as exc:
+            print(f"[documents] {file_type} failed for {site}: {exc}")
+
+    return generated
+
+
 async def _load_suppressions_for_employees(
     db: AsyncSession, emp_ids: list[int]
 ) -> tuple[dict[int, set[str]], dict[int, list[SuppressionInfo]]]:
@@ -852,53 +909,11 @@ async def decide_site(
     # ── Generate output files on approval (non-blocking — never fails the response) ─
     if body.decision == "approve":
         try:
-            import re as _re
             cycle = await _get_cycle_or_404(db, cycle_id)
             all_emps = await cycle_service.get_cycle_employees(db, cycle_id)
             site_emps = [e for e in all_emps if e.site.lower() == site.lower()]
 
-            out_dir = storage.outputs_dir(cycle_id, site)
-            safe_site = _re.sub(r'[\\/*?:"<>|]', "_", site)
-            safe_fy = cycle.fy_label.replace("/", "-")
-            generated: list[GeneratedFile] = []
-
-            for file_type, filename, generator in [
-                ("letters_zip",    f"PayLetters_{safe_site}_{safe_fy}.zip",     lambda p: doc_service.generate_letters_zip(site_emps, cycle, p)),
-                ("ukg_upload",     f"UKG_Payroll_{safe_site}_{safe_fy}.xlsx",   lambda p: doc_service.generate_ukg_upload(site_emps, cycle, p)),
-                ("regional_excel", f"ApprovedRates_{safe_site}_{safe_fy}.xlsx", lambda p: doc_service.generate_regional_excel(site_emps, cycle, site, p)),
-            ]:
-                try:
-                    file_path = out_dir / filename
-                    generator(file_path)
-                    generated.append(GeneratedFile(
-                        cycle_id=cycle_id, site=site,
-                        file_type=file_type, filename=filename,
-                        file_path=str(file_path),
-                        file_size=file_path.stat().st_size if file_path.exists() else None,
-                        generated_by_id=user.id,
-                    ))
-                except Exception as exc:
-                    print(f"[documents] {file_type} failed for {site}: {exc}")
-
-            # Legacy mail-merge .xlsm — one per letter type, only if this site
-            # actually has employees on that letter type this cycle.
-            for lt in ("A", "B", "C"):
-                file_type = f"mailmerge_{lt.lower()}"
-                filename = f"MailMerge_Letter{lt}_{safe_site}_{safe_fy}.xlsm"
-                try:
-                    file_path = out_dir / filename
-                    count = doc_service.generate_mailmerge_xlsm(site_emps, cycle, lt, file_path)
-                    if count == 0:
-                        continue
-                    generated.append(GeneratedFile(
-                        cycle_id=cycle_id, site=site,
-                        file_type=file_type, filename=filename,
-                        file_path=str(file_path),
-                        file_size=file_path.stat().st_size if file_path.exists() else None,
-                        generated_by_id=user.id,
-                    ))
-                except Exception as exc:
-                    print(f"[documents] {file_type} failed for {site}: {exc}")
+            generated = await _generate_all_site_files(cycle, site, site_emps, user.id)
 
             for gf in generated:
                 db.add(gf)
@@ -1004,8 +1019,6 @@ async def regenerate_site_files(
     generators so the downloaded files reflect the current code (e.g. PDFs
     instead of DOCX).
     """
-    import re as _re
-
     decoded_site = unquote(site)
 
     # Verify the site is approved
@@ -1033,56 +1046,125 @@ async def regenerate_site_files(
     )
     await db.flush()
 
-    out_dir = storage.outputs_dir(cycle_id, decoded_site)
-    safe_site = _re.sub(r'[\\/*?:"<>|]', "_", decoded_site)
-    safe_fy = cycle.fy_label.replace("/", "-")
-    generated: list[GeneratedFile] = []
-
-    for file_type, filename, generator in [
-        ("letters_zip",    f"PayLetters_{safe_site}_{safe_fy}.zip",     lambda p: doc_service.generate_letters_zip(site_emps, cycle, p)),
-        ("ukg_upload",     f"UKG_Payroll_{safe_site}_{safe_fy}.xlsx",   lambda p: doc_service.generate_ukg_upload(site_emps, cycle, p)),
-        ("regional_excel", f"ApprovedRates_{safe_site}_{safe_fy}.xlsx", lambda p: doc_service.generate_regional_excel(site_emps, cycle, decoded_site, p)),
-    ]:
-        try:
-            file_path = out_dir / filename
-            generator(file_path)
-            generated.append(GeneratedFile(
-                cycle_id=cycle_id,
-                site=decoded_site,
-                file_type=file_type,
-                filename=filename,
-                file_path=str(file_path),
-                file_size=file_path.stat().st_size if file_path.exists() else None,
-                generated_by_id=user.id,
-            ))
-        except Exception as exc:
-            print(f"[regenerate] {file_type} failed for {decoded_site}: {exc}")
-
-    for lt in ("A", "B", "C"):
-        file_type = f"mailmerge_{lt.lower()}"
-        filename = f"MailMerge_Letter{lt}_{safe_site}_{safe_fy}.xlsm"
-        try:
-            file_path = out_dir / filename
-            count = doc_service.generate_mailmerge_xlsm(site_emps, cycle, lt, file_path)
-            if count == 0:
-                continue
-            generated.append(GeneratedFile(
-                cycle_id=cycle_id,
-                site=decoded_site,
-                file_type=file_type,
-                filename=filename,
-                file_path=str(file_path),
-                file_size=file_path.stat().st_size if file_path.exists() else None,
-                generated_by_id=user.id,
-            ))
-        except Exception as exc:
-            print(f"[regenerate] {file_type} failed for {decoded_site}: {exc}")
+    generated = await _generate_all_site_files(cycle, decoded_site, site_emps, user.id)
 
     for gf in generated:
         db.add(gf)
     await db.commit()
 
     return {"regenerated": len(generated), "site": decoded_site}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  Regenerate output files for EVERY approved site in the cycle at once
+# ─────────────────────────────────────────────────────────────────────────────
+@router.post(
+    "/cycles/{cycle_id}/regenerate-all-files",
+    dependencies=[Depends(require_roles(UserRole.HR_ADMIN.value))],
+)
+async def regenerate_all_files(
+    cycle_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> dict:
+    """Re-generate all output files for every currently-approved site in this
+    cycle (HR Admin only) — same as clicking "Regenerate files" on each
+    approved site individually, in one call.
+    """
+    cycle = await _get_cycle_or_404(db, cycle_id)
+
+    stmt = select(Approval).where(
+        Approval.cycle_id == cycle_id,
+        Approval.status == ApprovalStatus.APPROVED.value,
+    )
+    approved_sites = [a.site for a in (await db.execute(stmt)).scalars().all()]
+    if not approved_sites:
+        return {"sites_regenerated": 0, "files_regenerated": 0}
+
+    all_emps = await cycle_service.get_cycle_employees(db, cycle_id)
+    total_files = 0
+
+    for site in approved_sites:
+        site_emps = [e for e in all_emps if e.site.lower() == site.lower()]
+
+        await db.execute(
+            sql_delete(GeneratedFile).where(
+                GeneratedFile.cycle_id == cycle_id,
+                func.lower(GeneratedFile.site) == site.lower(),
+            )
+        )
+        await db.flush()
+
+        generated = await _generate_all_site_files(cycle, site, site_emps, user.id)
+        for gf in generated:
+            db.add(gf)
+        total_files += len(generated)
+
+    await db.commit()
+    return {"sites_regenerated": len(approved_sites), "files_regenerated": total_files}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  Combined mail-merge .xlsm across every approved site — on demand, not
+#  persisted (site approvals change independently, so a stale cached copy
+#  would drift). Generated fresh on each click.
+# ─────────────────────────────────────────────────────────────────────────────
+@router.get(
+    "/cycles/{cycle_id}/mailmerge-all/{letter_type}.xlsm",
+    dependencies=[
+        Depends(
+            require_roles(
+                UserRole.HR_ADMIN.value,
+                UserRole.SENIOR_MANAGEMENT.value,
+                UserRole.PAYROLL.value,
+            )
+        )
+    ],
+)
+async def get_mailmerge_all_sites(
+    cycle_id: int,
+    letter_type: str,
+    db: AsyncSession = Depends(get_db),
+) -> StreamingResponse:
+    lt = letter_type.upper().strip()
+    if lt not in ("A", "B", "C"):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Unknown letter type")
+
+    cycle = await _get_cycle_or_404(db, cycle_id)
+
+    stmt = select(Approval).where(
+        Approval.cycle_id == cycle_id,
+        Approval.status == ApprovalStatus.APPROVED.value,
+    )
+    approved_sites = {a.site.lower() for a in (await db.execute(stmt)).scalars().all()}
+    if not approved_sites:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No approved sites in this cycle yet")
+
+    all_emps = await cycle_service.get_cycle_employees(db, cycle_id)
+    emps = [e for e in all_emps if e.site.lower() in approved_sites]
+
+    import io
+    import re as _re
+    import tempfile
+    from pathlib import Path as _Path
+
+    with tempfile.TemporaryDirectory() as tmp:
+        out_path = _Path(tmp) / "mailmerge_all.xlsm"
+        count = doc_service.generate_mailmerge_xlsm(emps, cycle, lt, out_path)
+        if count == 0:
+            raise HTTPException(
+                status.HTTP_404_NOT_FOUND,
+                f"No employees on Letter {lt} across any approved site",
+            )
+        data = out_path.read_bytes()
+
+    safe_fy = cycle.fy_label.replace("/", "-")
+    filename = f"MailMerge_Letter{lt}_AllSites_{safe_fy}.xlsm"
+    return StreamingResponse(
+        io.BytesIO(data),
+        media_type="application/vnd.ms-excel.sheet.macroEnabled.12",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
