@@ -248,9 +248,22 @@ def check_employee(
         (k for k in context.award_rates if _normalize(k) == ca_n), None
     ) if ca_n else None
 
+    # The classification that actually governs the award floor / junior stream
+    # going forward: the PROPOSED level if one's been accepted this cycle,
+    # otherwise the current one. Using current_award alone would validate the
+    # new rate against the classification she's leaving, not the one she's
+    # landing on — e.g. someone advancing PP3→PP4 needs to clear PP4's
+    # minimum, not PP3's.
+    ea_n = _normalize(proposed_award or current_award or "")
+    ea_canonical = next(
+        (k for k in context.award_rates if _normalize(k) == ea_n), None
+    ) if ea_n else None
+    if ea_canonical is None:
+        ea_canonical = ca_canonical
+
     # ── Check 1: Classification ──────────────────────────────────────────────
     if ca_canonical:
-        result.award_minimum = context.award_rates[ca_canonical]
+        result.award_minimum = context.award_rates[ea_canonical] if ea_canonical else context.award_rates[ca_canonical]
         result.checks.append(CheckResult(
             "ok", "Classification",
             f"{ca_canonical} — recognised award level",
@@ -271,7 +284,7 @@ def check_employee(
         result.overall = _worst(result.overall, "warn")
 
     # ── Junior multiplier — computed early so Award floor and PP band checks both use it
-    _is_ss = ca_canonical is not None and "SS" in (ca_canonical or "").split()
+    _is_ss = ea_canonical is not None and "SS" in (ea_canonical or "").split()
     _junior_pct: float | None = None
     if age is not None and age < 21 and _is_ss:
         _junior_pct = context.junior_rates.get(min(age, 20), 0.40)
