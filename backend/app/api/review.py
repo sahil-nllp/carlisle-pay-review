@@ -1168,6 +1168,62 @@ async def get_mailmerge_all_sites(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+#  Combined UKG payroll upload across every approved site — on demand, not
+#  persisted (same reasoning as the mail-merge one above).
+# ─────────────────────────────────────────────────────────────────────────────
+@router.get(
+    "/cycles/{cycle_id}/ukg-all.xlsx",
+    dependencies=[
+        Depends(
+            require_roles(
+                UserRole.HR_ADMIN.value,
+                UserRole.SENIOR_MANAGEMENT.value,
+                UserRole.PAYROLL.value,
+            )
+        )
+    ],
+)
+async def get_ukg_all_sites(
+    cycle_id: int,
+    db: AsyncSession = Depends(get_db),
+) -> StreamingResponse:
+    cycle = await _get_cycle_or_404(db, cycle_id)
+
+    stmt = select(Approval).where(
+        Approval.cycle_id == cycle_id,
+        Approval.status == ApprovalStatus.APPROVED.value,
+    )
+    approved_sites = {a.site.lower() for a in (await db.execute(stmt)).scalars().all()}
+    if not approved_sites:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No approved sites in this cycle yet")
+
+    all_emps = await cycle_service.get_cycle_employees(db, cycle_id)
+    emps = [e for e in all_emps if e.site.lower() in approved_sites]
+
+    import io
+    import tempfile
+    from pathlib import Path as _Path
+
+    with tempfile.TemporaryDirectory() as tmp:
+        out_path = _Path(tmp) / "ukg_all.xlsx"
+        count = doc_service.generate_ukg_upload(emps, cycle, out_path)
+        if count == 0:
+            raise HTTPException(
+                status.HTTP_404_NOT_FOUND,
+                "No employees with a proposed rate across any approved site",
+            )
+        data = out_path.read_bytes()
+
+    safe_fy = cycle.fy_label.replace("/", "-")
+    filename = f"UKG_Payroll_AllSites_{safe_fy}.xlsx"
+    return StreamingResponse(
+        io.BytesIO(data),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 #  Compliance suppression  (acknowledge / un-acknowledge non-rate warnings)
 # ─────────────────────────────────────────────────────────────────────────────
 

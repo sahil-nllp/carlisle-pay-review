@@ -120,3 +120,12 @@ export async function downloadMailmergeAllSites(
     `mailmerge-letter-${letterType}-all-sites.xlsm`,
   );
 }
+
+/** Download a combined UKG payroll upload covering every approved site's
+ * employees. Generated fresh on each call. */
+export async function downloadUkgAllSites(cycleId: number): Promise<void> {
+  await _triggerBlobDownload(
+    `${API_URL}/api/v1/cycles/${cycleId}/ukg-all.xlsx`,
+    `ukg-payroll-all-sites.xlsx`,
+  );
+}

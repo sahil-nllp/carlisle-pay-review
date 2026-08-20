@@ -3,7 +3,7 @@
 import { useState } from "react";
 
 import type { DownloadFile } from "@/lib/downloads.server";
-import { downloadMailmergeAllSites, regenerateAllFiles, regenerateSiteFiles } from "@/lib/approvals";
+import { downloadMailmergeAllSites, downloadUkgAllSites, regenerateAllFiles, regenerateSiteFiles } from "@/lib/approvals";
 
 interface Props {
   cycleId: number;
@@ -19,7 +19,7 @@ export default function DownloadsClient({ cycleId, bySite }: Props) {
   const [regenAllDone, setRegenAllDone] = useState(false);
   const [regenAllError, setRegenAllError] = useState<string | null>(null);
 
-  const [downloadingType, setDownloadingType] = useState<"A" | "B" | "C" | null>(null);
+  const [downloadingType, setDownloadingType] = useState<"A" | "B" | "C" | "UKG" | null>(null);
   const [downloadError, setDownloadError] = useState<string | null>(null);
 
   // After regeneration the page data is stale — reload to pick up the new file records
@@ -71,6 +71,18 @@ export default function DownloadsClient({ cycleId, bySite }: Props) {
     }
   }
 
+  async function handleDownloadUkgAll() {
+    setDownloadingType("UKG");
+    setDownloadError(null);
+    try {
+      await downloadUkgAllSites(cycleId);
+    } catch (err) {
+      setDownloadError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setDownloadingType(null);
+    }
+  }
+
   const entries = Object.entries(bySite).sort(([a], [b]) => a.localeCompare(b));
 
   const allSitesToolbar = (
@@ -80,7 +92,7 @@ export default function DownloadsClient({ cycleId, bySite }: Props) {
     >
       <div className="flex flex-wrap items-center gap-2">
         <span className="mr-1 text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--neutral-500)" }}>
-          All sites — mail-merge macro:
+          All sites — combined downloads:
         </span>
         {(["A", "B", "C"] as const).map((lt) => (
           <button
@@ -97,6 +109,18 @@ export default function DownloadsClient({ cycleId, bySite }: Props) {
             {downloadingType === lt ? "Preparing…" : `⬇ Macro ${lt}`}
           </button>
         ))}
+        <button
+          onClick={handleDownloadUkgAll}
+          disabled={downloadingType !== null}
+          className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold disabled:opacity-60"
+          style={{
+            background: "var(--violet-100)", color: "var(--violet-700)", border: "1px solid #ddd6fe",
+            cursor: downloadingType !== null ? "not-allowed" : "pointer",
+          }}
+          title="Combined UKG payroll upload covering every approved site's employees, in one file."
+        >
+          {downloadingType === "UKG" ? "Preparing…" : "⬇ UKG (All Sites)"}
+        </button>
       </div>
 
       <button
